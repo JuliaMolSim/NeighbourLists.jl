@@ -111,7 +111,7 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
    ns = tuple(n1, n2, n3)
    ns_vec = SVec(n1, n2, n3)
 
-   if BigInt(n1) * BigInt(n2) * BigInt(n3) > typemax(Int)
+   if BigInt(n1) * BigInt(n2) * BigInt(n3) > typemax(TI)
       error("""Ratio of simulation cell size to cutoff is very large.
                Are you using a cell with lots of vacuum? To fix this
                use a larger integer type (e.g. Int128) or a
@@ -140,20 +140,17 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
       c = position_to_cell_index(inv_cell, X[i], ns_vec)
 
       # Periodic/non-periodic boundary conditions
-      # TODO PBC
-      c1 = pbc[1] ? bin_wrap(c[1], n1) : bin_trunc(c[1], n1)
-      c2 = pbc[2] ? bin_wrap(c[2], n2) : bin_trunc(c[2], n2)
-      c3 = pbc[3] ? bin_wrap(c[3], n3) : bin_trunc(c[3], n3)
+      c = bin_wrap_or_trunc(c, pbc, ns_vec)
 
       # linear cell index  # (+1 due to 1-based indexing)
-      ci = sub2ind(ns, c1, c2, c3)
+      ci = sub2ind(ns, c[1], c[2], c[3])
 
       # TODO: rewrite more nicely :)   1 <= c1 = n1 etc
       #       or  all(1 .<= cs .<= ns)
-      @assert c1 > 0 && c1 <= n1
-      @assert c2 > 0 && c2 <= n2
-      @assert c3 > 0 && c3 <= n3
-      @assert ci > 0 && ci <= ncells
+      # @assert c1 > 0 && c1 <= n1
+      # @assert c2 > 0 && c2 <= n2
+      # @assert c3 > 0 && c3 <= n3
+      # @assert ci > 0 && ci <= ncells
 
       # Put atom into appropriate bin (linked list)
       if seed[ci] < 0
@@ -192,23 +189,19 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
       ci0 = position_to_cell_index(inv_cell, xi, ns_vec)
 
       # Truncate if non-periodic and outside of simulation domain
-      ci1 = pbc[1]  ?  ci0[1]  :  bin_trunc(ci0[1], n1)
-      ci2 = pbc[2]  ?  ci0[2]  :  bin_trunc(ci0[2], n2)
-      ci3 = pbc[3]  ?  ci0[3]  :  bin_trunc(ci0[3], n3)
+      ci = bin_trunc(ci0, pbc, ns_vec)
 
       # dri is the position relative to the lower left corner of the bin
-      dxi = xi - (ci1-1) * bin1 - (ci2-1) * bin2 - (ci3-1) * bin3
+      dxi = xi - (ci[1]-1) * bin1 - (ci[2]-1) * bin2 - (ci[3]-1) * bin3
 
       # Apply periodic boundary conditions
-      # TODO PBC; ALSO why is bin_trunc run a second time???
-      ci1 = pbc[1]  ?  bin_wrap(ci0[1], n1)  :  bin_trunc(ci0[1], n1)
-      ci2 = pbc[2]  ?  bin_wrap(ci0[2], n2)  :  bin_trunc(ci0[2], n2)
-      ci3 = pbc[3]  ?  bin_wrap(ci0[3], n3)  :  bin_trunc(ci0[3], n3)
+      # TODO why is bin_trunc run a second time???
+      ci = bin_wrap_or_trunc(ci0, pbc, ns_vec)
 
       # Loop over neighbouring bins
       for z = -nz:nz
-         cj3 = ci3 + z
-         if pbc[3]    # TODO PBC
+         cj3 = ci[3] + z
+         if pbc[3]
             cj3 = bin_wrap(cj3, n3)
          end
 
@@ -222,8 +215,8 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
          off3 = z * bin3
 
          for y = -ny:ny
-            cj2 = ci2 + y
-            if pbc[2]   # TODO PBC
+            cj2 = ci[2] + y
+            if pbc[2]
                cj2 = bin_wrap(cj2, n2)
             end
 
@@ -238,8 +231,8 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
 
             for x = -nx:nx
                # Bin index of neighbouring bin
-               cj1 = ci1 + x
-               if pbc[1]   # TODO PBC
+               cj1 = ci[1] + x
+               if pbc[1]
                   cj1 = bin_wrap(cj1, n1)
                end
 
@@ -250,7 +243,7 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
 
                # cj1 = bin_trunc(cj1, n1)   should not be necessary
                ncj = cj1 + ncj2   # linear cell-index of potential neighbour j
-               @assert ncj == sub2ind(ns, cj1, cj2, cj3)
+               # @assert ncj == sub2ind(ns, cj1, cj2, cj3)
                # TODO: switch to sub2ind??
 
                # Offset of the neighboring bins
@@ -263,14 +256,12 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
                   if i != j || x != 0 || y != 0 || z != 0
                      xj = X[j] # position of current neighbour
 
-                     # TODO: Why do we need to find the cell index again?
+                     # we need to find the cell index again, because this is
+                     # not really the cell index, but it could be outside
+                     # the domain -> i.e. this only makes a difference for pbc
+                     # TODO: which suggests there is an optimisation to be done
                      cj = position_to_cell_index(inv_cell, xj, ns_vec)
-                     cj = MVector{3, TI}(cj_)
-
-                     # Truncate if non-periodic and outside of simulation domain
-                     if !pbc[1];  cj[1] = bin_trunc(cj[1], n1);  end
-                     if !pbc[2];  cj[2] = bin_trunc(cj[2], n2);  end
-                     if !pbc[3];  cj[3] = bin_trunc(cj[3], n3);  end
+                     cj = bin_trunc(cj, pbc, ns_vec)
 
                      # drj is position relative to lower left corner of the bin
                      dxj = xj - (cj[1]-1) * bin1 - (cj[2]-1) * bin2 - (cj[3]-1) * bin3
