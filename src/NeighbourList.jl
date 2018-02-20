@@ -8,7 +8,6 @@ const SMat{T} = SMatrix{3, 3, T, 9}
 
 # ====================== Cell Index Algebra =====================
 
-# TODO: should indexing of the cells start at 0?
 
 
 """
@@ -19,7 +18,7 @@ Map i back to the interval [0,n) by shifting by integer multiples of n
    while i > n;  i -= n; end
    return i;
 end
-# TODO: redo this using round?
+
 
 """
 Map i back to the interval [0,n) by assigning edge value if outside interval
@@ -45,9 +44,6 @@ end
             pbc[3] ? bin_wrap(cj[3], ns[3]) : bin_trunc(cj[3], ns[3]) )
 
 
-# matrix-vector multiplication
-# mat_mul_vec(double *mat, double *vin, double *vout)
-
 """
 Map particle position to a cell index
 """
@@ -58,10 +54,6 @@ Map particle position to a cell index
                     floor(TI, y[2]*ns[2]+1),
                     floor(TI, y[3]*ns[3]+1) )
 end
-
-# position_to_cell_index(double *inv_cell, double *ri, int n1, int n2, int n3,
-#                        int *c1, int *c2, int *c3)
-#  >>>> The output was stored in c1, c2, c3!
 
 
 # ==================== Actual Neighbour List Construction ================
@@ -273,11 +265,11 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
                      if norm_dx_sq < cutoff_sq
                         push!(first, i)
                         push!(secnd, j)
-                        push!(distvec, dx)
-                        push!(absdist, sqrt(norm_dx_sq))
-                        push!(shift, SVec{TI}((ci0[1] - cj[1] + x) ÷ n1,
-                                              (ci0[2] - cj[2] + y) ÷ n2,
-                                              (ci0[3] - cj[3] + z) ÷ n3))
+                        # push!(distvec, dx)
+                        # push!(absdist, sqrt(norm_dx_sq))
+                        # push!(shift, SVec{TI}((ci0[1] - cj[1] + x) ÷ n1,
+                        #                       (ci0[2] - cj[2] + y) ÷ n2,
+                        #                       (ci0[3] - cj[3] + z) ÷ n3))
                      end
                   end  # if i != j || x != 0 || y != 0 || z != 0
 
