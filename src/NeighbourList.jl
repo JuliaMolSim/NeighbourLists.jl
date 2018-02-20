@@ -14,7 +14,7 @@ const SMat{T} = SMatrix{3, 3, T, 9}
 """
 Map i back to the interval [0,n) by shifting by integer multiples of n
 """
-function bin_wrap(i::Integer, n::Integer)
+@inline function bin_wrap(i::Integer, n::Integer)
    while i <= 0;  i += n; end
    while i > n;  i -= n; end
    return i;
@@ -24,7 +24,7 @@ end
 """
 Map i back to the interval [0,n) by assigning edge value if outside interval
 """
-function bin_trunc(i::Integer, n::Integer)
+@inline function bin_trunc(i::Integer, n::Integer)
    if i <= 0
       i = 1
    elseif i > n
@@ -34,6 +34,16 @@ function bin_trunc(i::Integer, n::Integer)
 end
 
 
+@inline bin_trunc{TI}(cj::SVec{TI}, pbc::SVec{Bool}, ns::SVec{TI}) =
+   SVec{TI}(pbc[1] ? cj[1] : bin_trunc(cj[1], ns[1]),
+            pbc[2] ? cj[2] : bin_trunc(cj[2], ns[2]),
+            pbc[3] ? cj[3] : bin_trunc(cj[3], ns[3]) )
+
+@inline bin_wrap_or_trunc{TI}(cj::SVec{TI}, pbc::SVec{Bool}, ns::SVec{TI}) =
+   SVec{TI}(pbc[1] ? bin_wrap(cj[1], ns[1]) : bin_trunc(cj[1], ns[1]),
+            pbc[2] ? bin_wrap(cj[2], ns[2]) : bin_trunc(cj[2], ns[2]),
+            pbc[3] ? bin_wrap(cj[3], ns[3]) : bin_trunc(cj[3], ns[3]) )
+
 
 # matrix-vector multiplication
 # mat_mul_vec(double *mat, double *vin, double *vout)
@@ -41,8 +51,13 @@ end
 """
 Map particle position to a cell index
 """
-position_to_cell_index{T, TI <: Integer}(inv_cell::SMat{T}, x::SVec{T}, ns::SVec{TI}) =
-   floor.(TI, (inv_cell * x) .* ns) + 1
+@inline function position_to_cell_index{T, TI <: Integer}(
+                        inv_cell::SMat{T}, x::SVec{T}, ns::SVec{TI})
+   y = inv_cell * x
+   return SVec{TI}( floor(TI, y[1]*ns[1]+1),
+                    floor(TI, y[2]*ns[2]+1),
+                    floor(TI, y[3]*ns[3]+1) )
+end
 
 # position_to_cell_index(double *inv_cell, double *ri, int n1, int n2, int n3,
 #                        int *c1, int *c2, int *c3)
@@ -54,11 +69,18 @@ position_to_cell_index{T, TI <: Integer}(inv_cell::SMat{T}, x::SVec{T}, ns::SVec
 # TODO: consider redefining the cell in terms of the
 #       extent of X
 
+function neighbour_list{T}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{T}},
+                           cutoff::T, int_type::Type = Int)
+   # @assert int_type <: Integer
+   return _neighbour_list_(cell, pbc, X, cutoff, zero(int_type))
+end
+
+
 """
 TODO: write documentation
 """
-function neighbour_list{T}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{T}},
-                           cutoff::T, TI = Int)
+function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{T}},
+                           cutoff::T, ::TI)
 
    # ----------- analyze cell --------------
    inv_cell = inv(cell)
@@ -147,18 +169,17 @@ function neighbour_list{T}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{T}},
 
    # ------------ Start actual neighbourlist assembly ----------
    # Neighbour list counter and size
-   nneigh = 0           # Number of neighbours found
-   neighsize = nat*6    # Initial guess for neighbour list size
+   szhint = nat*6    # Initial guess for neighbour list size
 
    # neighbourlist information
-   first = zeros(TI, neighsize)   # i
-   secnd = zeros(TI, neighsize)   # j - (i,j) define an atom pair
-   absdist = zeros(T, neighsize)  #  Xj - Xi
-   distvec = zeros(SVec{T}, neighsize)   # r_ij
-   shift = zeros(SVec{TI}, neighsize)    # cell shifts
+   first   = Vector{TI}();      sizehint!(first, szhint)  # i
+   secnd   = Vector{TI}();      sizehint!(secnd, szhint)  # j -> (i,j) is a bond
+   absdist = Vector{T}();       sizehint!(absdist, szhint)       # Xj - Xi
+   distvec = Vector{SVec{T}}(); sizehint!(distvec, szhint) # r_ij
+   shift   = Vector{SVec{T}}(); sizehint!(shift, szhint)     # cell shifts
 
-   # TODO remove this
-   cutoff_sq = cutoff*cutoff
+   # funnily testing with cutoff^2 actually makes a measurable difference
+   cutoff_sq = cutoff^2
 
    # We need the shape of the bin
    bin1 = cell1 / n1
@@ -243,11 +264,10 @@ function neighbour_list{T}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{T}},
                      xj = X[j] # position of current neighbour
 
                      # TODO: Why do we need to find the cell index again?
-                     cj_ = position_to_cell_index(inv_cell, xj, ns_vec)
+                     cj = position_to_cell_index(inv_cell, xj, ns_vec)
                      cj = MVector{3, TI}(cj_)
 
                      # Truncate if non-periodic and outside of simulation domain
-                     #
                      if !pbc[1];  cj[1] = bin_trunc(cj[1], n1);  end
                      if !pbc[2];  cj[2] = bin_trunc(cj[2], n2);  end
                      if !pbc[3];  cj[3] = bin_trunc(cj[3], n3);  end
@@ -257,26 +277,16 @@ function neighbour_list{T}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{T}},
 
                      # Compute distance between atoms
                      dx = dxj - dxi + off
+                     norm_dx_sq = dot(dx, dx)
 
-                     if norm(dx) < cutoff
-
-                        # TODO: test whether this can be replaced with append!
-                        nneigh += 1
-                        if nneigh > neighsize
-                           append!(first,   zeros(TI,       neighsize))
-                           append!(secnd,   zeros(TI,       neighsize))
-                           append!(distvec, zeros(SVec{T},  neighsize))
-                           append!(absdist, zeros(T,        neighsize))
-                           append!(shift,   zeros(SVec{TI}, neighsize))
-                           neighsize *= 2
-                        end
-                        first[nneigh] = i
-                        secnd[nneigh] = j
-                        distvec[nneigh] = dx
-                        absdist[nneigh] = norm(dx)
-                        shift[nneigh] = SVec{TI}((ci0[1] - cj[1] + x) ÷ n1,
-                                                 (ci0[2] - cj[2] + y) ÷ n2,
-                                                 (ci0[3] - cj[3] + z) ÷ n3)
+                     if norm_dx_sq < cutoff_sq
+                        push!(first, i)
+                        push!(secnd, j)
+                        push!(distvec, dx)
+                        push!(absdist, sqrt(norm_dx_sq))
+                        push!(shift, SVec{TI}((ci0[1] - cj[1] + x) ÷ n1,
+                                              (ci0[2] - cj[2] + y) ÷ n2,
+                                              (ci0[3] - cj[3] + z) ÷ n3))
                      end
                   end  # if i != j || x != 0 || y != 0 || z != 0
 
@@ -288,13 +298,6 @@ function neighbour_list{T}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{T}},
          end # for y
       end # for z
    end # for i = 1:nat
-
-   # Resize arrays to actual size of neighbour list
-   first = first[1:nneigh]
-   secnd = secnd[1:nneigh]
-   distvec = distvec[1:nneigh]
-   absdist = absdist[1:nneigh]
-   shift = shift[1:nneigh]
 
    # Build return tuple
    return first, secnd, absdist, distvec, shift
