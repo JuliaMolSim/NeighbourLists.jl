@@ -75,27 +75,20 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
                            cutoff::T, ::TI)
 
    # ----------- analyze cell --------------
-   inv_cell = inv(cell)
-   cell1 = cell[1, :]       # cell vectors
-   cell2 = cell[2, :]
-   cell3 = cell[3, :]
-   norm1 = cell2 × cell3    # face normals
-   norm2 = cell3 × cell1
-   norm3 = cell1 × cell2
    # check the cell volume (allow only 3D volumes!)
-   volume = dot(cell3, norm3)
+   volume = det(cell)
    if volume < 1e-12
       error("Zero cell volume.")
    end
-   # normalise the face normals
-   len1, len2, len3 = norm(norm1), norm(norm2), norm(norm3)
-   norm1 *= volume/len1
-   norm2 *= volume/len2
-   norm3 *= volume/len3
+   # some cell geometry
+   inv_cell = inv(cell)
+   norm1 = cell[2, :] × cell[3, :]    # face normals
+   norm2 = cell[3, :] × cell[1, :]
+   norm3 = cell[1, :] × cell[2, :]
    # Compute distance of cell faces
-   len1 = volume/len1;
-   len2 = volume/len2;
-   len3 = volume/len3;
+   len1 = volume / norm(norm1);
+   len2 = volume / norm(norm2);
+   len3 = volume / norm(norm3);
    # Number of cells for cell subdivision
    n1 = max(floor(TI, len1 / cutoff), 1);
    n2 = max(floor(TI, len2 / cutoff), 1);
@@ -130,19 +123,13 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
    for i = 1:nat
       # Get cell index
       c = position_to_cell_index(inv_cell, X[i], ns_vec)
-
       # Periodic/non-periodic boundary conditions
       c = bin_wrap_or_trunc(c, pbc, ns_vec)
-
       # linear cell index  # (+1 due to 1-based indexing)
       ci = sub2ind(ns, c[1], c[2], c[3])
 
-      # TODO: rewrite more nicely :)   1 <= c1 = n1 etc
-      #       or  all(1 .<= cs .<= ns)
-      # @assert c1 > 0 && c1 <= n1
-      # @assert c2 > 0 && c2 <= n2
-      # @assert c3 > 0 && c3 <= n3
-      # @assert ci > 0 && ci <= ncells
+      @assert all(1 .<= c .<= ns_vec)
+      @assert 1 .<= ci .<= ncells
 
       # Put atom into appropriate bin (linked list)
       if seed[ci] < 0
@@ -157,37 +144,39 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
    end
 
    # ------------ Start actual neighbourlist assembly ----------
-   # Neighbour list counter and size
+   # allocate neighbourlist information (can make a better guess?)
    szhint = nat*6    # Initial guess for neighbour list size
-
-   # neighbourlist information
    first   = Vector{TI}();      sizehint!(first, szhint)  # i
    secnd   = Vector{TI}();      sizehint!(secnd, szhint)  # j -> (i,j) is a bond
-   absdist = Vector{T}();       sizehint!(absdist, szhint)       # Xj - Xi
+   absdist = Vector{T}();       sizehint!(absdist, szhint) # Xj - Xi
    distvec = Vector{SVec{T}}(); sizehint!(distvec, szhint) # r_ij
-   shift   = Vector{SVec{T}}(); sizehint!(shift, szhint)     # cell shifts
+   shift   = Vector{SVec{T}}(); sizehint!(shift, szhint)   # cell shifts
 
    # funnily testing with cutoff^2 actually makes a measurable difference
+   # which suggests we are pretty close to the limit
    cutoff_sq = cutoff^2
 
    # We need the shape of the bin
-   bin1 = cell1 / n1
-   bin2 = cell2 / n2
-   bin3 = cell3 / n3
+   bin1 = cell[1, :] / n1
+   bin2 = cell[2, :] / n2
+   bin3 = cell[3, :] / n3
 
    # Loop over atoms
    for i = 1:nat
+      # current atom position
       xi = X[i]
+      # cell index (cartesian) of xi
       ci0 = position_to_cell_index(inv_cell, xi, ns_vec)
 
       # Truncate if non-periodic and outside of simulation domain
+      # here, we don't yet want to wrap the pbc as well
       ci = bin_trunc(ci0, pbc, ns_vec)
-
       # dri is the position relative to the lower left corner of the bin
       dxi = xi - (ci[1]-1) * bin1 - (ci[2]-1) * bin2 - (ci[3]-1) * bin3
 
-      # Apply periodic boundary conditions
-      # TODO why is bin_trunc run a second time???
+      # Apply periodic boundary conditions as well
+      # (technically we only need to wrap here, since we've already truncated
+      #  but it makes very little difference for performance)
       ci = bin_wrap_or_trunc(ci0, pbc, ns_vec)
 
       # Loop over neighbouring bins
@@ -196,30 +185,20 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
          if pbc[3]
             cj3 = bin_wrap(cj3, n3)
          end
-
          # Skip to next z value if neighbour cell is out of simulation bounds
          if cj3 <= 0 || cj3 > n3
             continue
          end
-
-         # cj3 = bin_trunc(cj3, n3)  #  THIS SHOULD NOT BE NECESSARY?
-         ncj3 = n2 * (cj3-1)    # WHAT DOES THIS DO?
-         off3 = z * bin3
 
          for y = -ny:ny
             cj2 = ci[2] + y
             if pbc[2]
                cj2 = bin_wrap(cj2, n2)
             end
-
             # Skip to next y value if cell is out of simulation bounds
             if cj2 <= 0 || cj2 > n2
                continue
             end
-
-            # cj2 = bin_trunc(cj2, n2)  SHOUDL NOT BE NECESSARY
-            ncj2 = n1 * (cj2-1 + ncj3)   # what does this do?
-            off2 = off3 + y * bin2;
 
             for x = -nx:nx
                # Bin index of neighbouring bin
@@ -227,19 +206,16 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
                if pbc[1]
                   cj1 = bin_wrap(cj1, n1)
                end
-
                # Skip to next x value if cell is out of simulation bounds
                if cj1 <= 0 || cj1 > n1
                   continue
                end
 
-               # cj1 = bin_trunc(cj1, n1)   should not be necessary
-               ncj = cj1 + ncj2   # linear cell-index of potential neighbour j
-               # @assert ncj == sub2ind(ns, cj1, cj2, cj3)
-               # TODO: switch to sub2ind??
+               # linear cell index
+               ncj = sub2ind(ns, cj1, cj2, cj3)
 
                # Offset of the neighboring bins
-               off = off2 + x * bin1
+               off = x * bin1 + y * bin2 + z * bin3
 
                # Loop over all atoms in neighbouring bin (all potential
                # neighbours in the bin with linear index cj1)
@@ -265,11 +241,11 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
                      if norm_dx_sq < cutoff_sq
                         push!(first, i)
                         push!(secnd, j)
-                        # push!(distvec, dx)
-                        # push!(absdist, sqrt(norm_dx_sq))
-                        # push!(shift, SVec{TI}((ci0[1] - cj[1] + x) ÷ n1,
-                        #                       (ci0[2] - cj[2] + y) ÷ n2,
-                        #                       (ci0[3] - cj[3] + z) ÷ n3))
+                        push!(distvec, dx)
+                        push!(absdist, sqrt(norm_dx_sq))
+                        push!(shift, SVec{TI}((ci0[1] - cj[1] + x) ÷ n1,
+                                              (ci0[2] - cj[2] + y) ÷ n2,
+                                              (ci0[3] - cj[3] + z) ÷ n3))
                      end
                   end  # if i != j || x != 0 || y != 0 || z != 0
 
