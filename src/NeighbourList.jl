@@ -43,6 +43,8 @@ end
    sub2ind(dims, i[1], i[2], i[3])
 
 
+lengths{T}(C::SMat{T}) =
+   det(C) ./ SVec{T}(norm(C[2,:]×C[3,:]), norm(C[3,:]×C[1,:]), norm(C[1,:]×C[2,:]))
 
 
 # ==================== GateWay Routines  ================
@@ -80,10 +82,7 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
    # precompute inverse of cell matrix for coordiate transformation
    inv_cell = inv(cell)
    # Compute distance of cell faces
-   len1 = volume / norm(cell[2, :] × cell[3, :]);
-   len2 = volume / norm(cell[3, :] × cell[1, :]);
-   len3 = volume / norm(cell[1, :] × cell[2, :]);
-   lens = SVec{T}(len1, len2, len3)
+   lens = lengths(cell)
    # Number of cells for cell subdivision
    ns_vec = max.(floor.(TI, lens / cutoff), 1)
    ns = ns_vec.data   # a tuple
@@ -169,7 +168,7 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
          # get the bin index
          cj = bin_wrap.(ci + xyz, pbc, ns_vec)
          # skip this bin if not inside the domain
-         if !all(1 .<= cj .<= ns_vec); continue; end
+         all(1 .<= cj .<= ns_vec) || continue
          # linear cell index
          ncj = sub2ind(ns, cj)
          # Offset of the neighboring bins
