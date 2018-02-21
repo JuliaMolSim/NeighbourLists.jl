@@ -8,32 +8,36 @@ function test_nlist(at, cutoff)
    perbc = JVec(pbc(at))
    i, j, r, R, S = NeighbourList.neighbour_list(C, perbc, X, cutoff)
    nlist = neighbourlist(at, cutoff)
-   # @test (r == nlist.r) && (R == nlist.R) && (S == nlist.S) &&
-   #       (i == nlist.i) && (j == nlist.j)
-   @test (i == nlist.i) && (j == nlist.j)
+   @test (i == nlist.i) && (j == nlist.j) && (S == nlist.S) &&
+      (vecnorm(r - nlist.r, Inf) < 1e-14) &&
+      (maximum(norm.(R - nlist.R, Inf)) < 1e-14)
+   # @test (i == nlist.i) && (j == nlist.j)
 end
 
 @testset "NeighbourList" begin
 
-# TEST 1: si, cubic cell, cluster
+println("TEST 1: si, cubic cell, cluster")
 at = bulk("Si", cubic=true) * 3
 set_pbc!(at, false)
 test_nlist(at, 1.1 * rnn("Si"))
 test_nlist(at, 1.2 * rnn("Si"))
 
-# TEST 2: si, non-cubic cell, cluster
+println("TEST 2: si, non-cubic cell, cluster")
 at = bulk("Si") * 5
 set_pbc!(at, false)
 test_nlist(at, 2.1 * rnn("Si"))
 
-# TEST 3: si, non-cubic cell, pbc
+println("TEST 3: si, non-cubic cell, pbc")
 at = bulk("Si") * 5
 set_pbc!(at, true)
 test_nlist(at, 2.1 * rnn("Si"))
 
-# TEST 4: si, non-cubic cell, mixed bc
+println("TEST 4: si, non-cubic cell, mixed bc")
 at = bulk("Si") * 5
 set_pbc!(at, (true, false, true))
 test_nlist(at, 2.1 * rnn("Si"))
 
 end
+
+println("Performance Test:")
+include("profile.jl")

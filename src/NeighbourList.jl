@@ -32,12 +32,18 @@ Map i back to the interval [0,n) by assigning edge value if outside interval
    return i
 end
 
-
+"""
+applies bin_trunc only to open boundary directions
+"""
 @inline bin_trunc{TI}(cj::SVec{TI}, pbc::SVec{Bool}, ns::SVec{TI}) =
    SVec{TI}(pbc[1] ? cj[1] : bin_trunc(cj[1], ns[1]),
             pbc[2] ? cj[2] : bin_trunc(cj[2], ns[2]),
             pbc[3] ? cj[3] : bin_trunc(cj[3], ns[3]) )
 
+"""
+applies bin_trunc to open boundary directions, and bin_wrap to
+periodic boundary directions
+"""
 @inline bin_wrap_or_trunc{TI}(cj::SVec{TI}, pbc::SVec{Bool}, ns::SVec{TI}) =
    SVec{TI}(pbc[1] ? bin_wrap(cj[1], ns[1]) : bin_trunc(cj[1], ns[1]),
             pbc[2] ? bin_wrap(cj[2], ns[2]) : bin_trunc(cj[2], ns[2]),
@@ -56,6 +62,9 @@ Map particle position to a cell index
 end
 
 
+@inline Base.sub2ind{TI <: Integer}(dims::NTuple{3,TI}, i::SVec{TI}) =
+   sub2ind(dims, i[1], i[2], i[3])
+
 # ==================== Actual Neighbour List Construction ================
 
 # TODO: consider redefining the cell in terms of the
@@ -63,7 +72,6 @@ end
 
 function neighbour_list{T}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{T}},
                            cutoff::T, int_type::Type = Int)
-   # @assert int_type <: Integer
    return _neighbour_list_(cell, pbc, X, cutoff, zero(int_type))
 end
 
@@ -78,17 +86,14 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
    # check the cell volume (allow only 3D volumes!)
    volume = det(cell)
    if volume < 1e-12
-      error("Zero cell volume.")
+      error("(near) Zero cell volume.")
    end
-   # some cell geometry
+   # precompute inverse of cell matrix for coordiate transformation
    inv_cell = inv(cell)
-   norm1 = cell[2, :] × cell[3, :]    # face normals
-   norm2 = cell[3, :] × cell[1, :]
-   norm3 = cell[1, :] × cell[2, :]
    # Compute distance of cell faces
-   len1 = volume / norm(norm1);
-   len2 = volume / norm(norm2);
-   len3 = volume / norm(norm3);
+   len1 = volume / norm(cell[2, :] × cell[3, :]);
+   len2 = volume / norm(cell[3, :] × cell[1, :]);
+   len3 = volume / norm(cell[1, :] × cell[2, :]);
    # Number of cells for cell subdivision
    n1 = max(floor(TI, len1 / cutoff), 1);
    n2 = max(floor(TI, len2 / cutoff), 1);
@@ -96,18 +101,17 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
    ns = tuple(n1, n2, n3)
    ns_vec = SVec(n1, n2, n3)
 
-   if BigInt(n1) * BigInt(n2) * BigInt(n3) > typemax(TI)
+   if prod(BigInt.(ns_vec)) > typemax(TI)
       error("""Ratio of simulation cell size to cutoff is very large.
                Are you using a cell with lots of vacuum? To fix this
-               use a larger integer type (e.g. Int128) or a
-               larger cut-off.""")
+               use a larger integer type (e.g. Int128), a
+               larger cut-off, or a smaller simulation cell.""")
    end
 
    # just to double-check everything is sane?
-   @assert all(ns .> 0)
+   # @assert all(ns .> 0)
 
    # Find out over how many neighbor cells we need to loop (if the box is small
-   # TODO PBC
    nx = ceil(TI, cutoff * n1 / len1)
    ny = ceil(TI, cutoff * n2 / len2)
    nz = ceil(TI, cutoff * n3 / len3)
@@ -126,10 +130,11 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
       # Periodic/non-periodic boundary conditions
       c = bin_wrap_or_trunc(c, pbc, ns_vec)
       # linear cell index  # (+1 due to 1-based indexing)
-      ci = sub2ind(ns, c[1], c[2], c[3])
+      ci = sub2ind(ns, c)
 
-      @assert all(1 .<= c .<= ns_vec)
-      @assert 1 .<= ci .<= ncells
+      # sanity check
+      # @assert all(1 .<= c .<= ns_vec)
+      # @assert 1 <= ci <= ncells
 
       # Put atom into appropriate bin (linked list)
       if seed[ci] < 0
@@ -146,20 +151,18 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
    # ------------ Start actual neighbourlist assembly ----------
    # allocate neighbourlist information (can make a better guess?)
    szhint = nat*6    # Initial guess for neighbour list size
-   first   = Vector{TI}();      sizehint!(first, szhint)  # i
-   secnd   = Vector{TI}();      sizehint!(secnd, szhint)  # j -> (i,j) is a bond
+   first   = Vector{TI}();      sizehint!(first, szhint)   # i
+   secnd   = Vector{TI}();      sizehint!(secnd, szhint)   # j -> (i,j) is a bond
    absdist = Vector{T}();       sizehint!(absdist, szhint) # Xj - Xi
    distvec = Vector{SVec{T}}(); sizehint!(distvec, szhint) # r_ij
    shift   = Vector{SVec{T}}(); sizehint!(shift, szhint)   # cell shifts
 
    # funnily testing with cutoff^2 actually makes a measurable difference
-   # which suggests we are pretty close to the limit
+   # which suggests we are pretty close to the performance limit
    cutoff_sq = cutoff^2
 
-   # We need the shape of the bin
-   bin1 = cell[1, :] / n1
-   bin2 = cell[2, :] / n2
-   bin3 = cell[3, :] / n3
+   # We need the shape of the bin ( bins[:, i] = cell[i,:] / ns[i] )
+   bins = cell' ./ ns_vec
 
    # Loop over atoms
    for i = 1:nat
@@ -171,8 +174,8 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
       # Truncate if non-periodic and outside of simulation domain
       # here, we don't yet want to wrap the pbc as well
       ci = bin_trunc(ci0, pbc, ns_vec)
-      # dri is the position relative to the lower left corner of the bin
-      dxi = xi - (ci[1]-1) * bin1 - (ci[2]-1) * bin2 - (ci[3]-1) * bin3
+      # dxi is the position relative to the lower left corner of the bin
+      dxi = xi - bins * (ci - 1)
 
       # Apply periodic boundary conditions as well
       # (technically we only need to wrap here, since we've already truncated
@@ -215,44 +218,42 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
                ncj = sub2ind(ns, cj1, cj2, cj3)
 
                # Offset of the neighboring bins
-               off = x * bin1 + y * bin2 + z * bin3
+               xyz = SVec(x, y, z)
+               off = bins * xyz
 
                # Loop over all atoms in neighbouring bin (all potential
                # neighbours in the bin with linear index cj1)
                j = seed[ncj] # the first atom in the ncj cell
                while j > 0
-                  if i != j || x != 0 || y != 0 || z != 0
+                  if i != j || any(xyz .!= 0)
                      xj = X[j] # position of current neighbour
 
                      # we need to find the cell index again, because this is
                      # not really the cell index, but it could be outside
                      # the domain -> i.e. this only makes a difference for pbc
-                     # TODO: which suggests there is an optimisation to be done
                      cj = position_to_cell_index(inv_cell, xj, ns_vec)
                      cj = bin_trunc(cj, pbc, ns_vec)
 
                      # drj is position relative to lower left corner of the bin
-                     dxj = xj - (cj[1]-1) * bin1 - (cj[2]-1) * bin2 - (cj[3]-1) * bin3
+                     dxj = xj - bins * (cj - 1)
 
                      # Compute distance between atoms
                      dx = dxj - dxi + off
-                     norm_dx_sq = dot(dx, dx)
+                     norm_dx_sq = dx ⋅ dx
 
                      if norm_dx_sq < cutoff_sq
                         push!(first, i)
                         push!(secnd, j)
                         push!(distvec, dx)
                         push!(absdist, sqrt(norm_dx_sq))
-                        push!(shift, SVec{TI}((ci0[1] - cj[1] + x) ÷ n1,
-                                              (ci0[2] - cj[2] + y) ÷ n2,
-                                              (ci0[3] - cj[3] + z) ÷ n3))
+                        push!(shift, (ci0 - cj + xyz) .÷ ns_vec)
                      end
-                  end  # if i != j || x != 0 || y != 0 || z != 0
+                  end  # if i != j || any(xyz .!= 0)
 
                   # go to the next atom in the current cell
                   j = next[j];
 
-               end # while j > 0
+               end # while j > 0 (loop over atoms in current cell)
             end # for x
          end # for y
       end # for z
