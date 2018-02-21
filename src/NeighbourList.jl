@@ -1,6 +1,6 @@
 module NeighbourList
 
-using StaticArrays
+using StaticArrays, ResumableFunctions
 
 const SVec{T} = SVector{3, T}
 const SMat{T} = SMatrix{3, 3, T, 9}
@@ -19,6 +19,10 @@ Map i back to the interval [0,n) by shifting by integer multiples of n
    return i;
 end
 
+@inline bin_wrap{TI}(i::SVec{TI}, pbc::SVec{Bool}, ns::SVec{TI}) =
+   SVec{TI}( pbc[1] ? bin_wrap(i[1], ns[1]) : i[1],
+             pbc[2] ? bin_wrap(i[2], ns[2]) : i[2],
+             pbc[3] ? bin_wrap(i[3], ns[3]) : i[3] )
 
 """
 Map i back to the interval [0,n) by assigning edge value if outside interval
@@ -65,6 +69,103 @@ end
 @inline Base.sub2ind{TI <: Integer}(dims::NTuple{3,TI}, i::SVec{TI}) =
    sub2ind(dims, i[1], i[2], i[3])
 
+
+      # for z = -nz:nz
+      #    cj3 = ci[3] + z
+      #    if pbc[3]
+      #       cj3 = bin_wrap(cj3, n3)
+      #    end
+      #    # Skip to next z value if neighbour cell is out of simulation bounds
+      #    if cj3 <= 0 || cj3 > n3
+      #       continue
+      #    end
+
+# function it_neighbours(ci1, n1, pbc1, nx)
+#    if pbc1
+#       x = -nx:nx
+#       cj1 = bin_wrap.(ci1 .+ x, n1)
+#    else
+#       cj1 = max(ci1 - nx, 1):min(ci1 + nx, n1)
+#       x = (cj1[1]-ci1):(cj1[end]-ci1)
+#    end
+#    return zip(x, cj1)
+# end
+#
+#
+# @resumable function it_neig1(ci1::Int, n1::Int, pbc1::Bool, nx::Int)::Tuple{Int, Int}
+#    for x = -nx:nx
+#       cj1 = cj3 = ci1 + x
+#       if pbc1
+#          cj1 = bin_wrap(cj1, n1)
+#       elseif cj1 <= 0 || cj1 > n1
+#          continue
+#       end
+#       @yield (x, cj1)
+#    end
+#    return (x, -1)
+# end
+#
+# @resumable function it_neig_bins(ci::SVec{TI}, ns::SVec{TI}, pbc::SVec{Bool},
+#                nxyz::SVec{TI})::Tuple{SVec{TI}, SVec{TI}}  where TI <: Integer
+#    for z = -nxyz[3]:nxyz[3]
+#       # bin index in z direction
+#       cj3 = ci[3] + z
+#       if pbc[3]
+#          cj3 = bin_wrap(cj3, ns[3])
+#       end
+#       # Skip to next z value if neighbour cell is out of simulation bounds
+#       if cj3 <= 0 || cj3 > ns[3]
+#          continue
+#       end
+#    for y = -nxyz[2]:nxyz[2]
+#       cj2 = ci[2] + y
+#       if pbc[2]
+#          cj2 = bin_wrap(cj2, ns[2])
+#       end
+#       if cj2 <= 0 || cj2 > ns[2]
+#          continue
+#       end
+#    for x = -nxyz[1]:nxyz[1]
+#       cj1 = ci[1] + x
+#       if pbc[1]
+#          cj1 = bin_wrap(cj1, ns[1])
+#       end
+#       if cj1 <= 0 || cj1 > ns[1]
+#          continue
+#       end
+#
+#       @yield SVec{TI}(x, y, z), SVec{TI}(cj1, cj2, cj3)
+#    end
+#    end
+#    end
+#
+#    return SVec{TI}(0,0,0), SVec{TI}(-1,-1,-1)
+# end
+#
+#
+# struct IT1{TI <: Integer}
+#    ci1::TI
+#    n1::TI
+#    pbc1::Bool
+#    nx::TI
+# end
+# @inline Base.start(i::IT1) = -i.nx
+# @inline Base.done(i::IT1, x) = (x > i.nx)
+# @inline function Base.next(i::IT1, x)
+#    cj1 = i.ci1 + x
+#    if i.pbc1
+#       cj1 = bin_wrap(cj1, i.n1)
+#    end
+#    return (x, cj1), x+1
+# end
+
+
+
+
+
+
+
+
 # ==================== Actual Neighbour List Construction ================
 
 # TODO: consider redefining the cell in terms of the
@@ -76,11 +177,19 @@ function neighbour_list{T}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{T}},
 end
 
 
+
+
 """
-TODO: write documentation
+_neighbour_list_(cell, pbc, X, cutoff, _): inner neighbourlist assembly
+
+*   `cell::SMatrix{D, D, T}`: rows are the cell vectors
+*    `pbc::SVector{3, Bool}`: flags for periodic bcs
+*      `X::Vector{SVec{T}}` : positions
+* `cutoff::T`               : cutoff radius
+* `     _::TI`              : a number specifying the integer type to be used
 """
 function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{T}},
-                           cutoff::T, ::TI)
+                           cutoff::T, _::TI)
 
    # ----------- analyze cell --------------
    # check the cell volume (allow only 3D volumes!)
@@ -183,80 +292,93 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
       ci = bin_wrap_or_trunc(ci0, pbc, ns_vec)
 
       # Loop over neighbouring bins
-      for z = -nz:nz
-         cj3 = ci[3] + z
-         if pbc[3]
-            cj3 = bin_wrap(cj3, n3)
-         end
-         # Skip to next z value if neighbour cell is out of simulation bounds
-         if cj3 <= 0 || cj3 > n3
+      # for z = -nz:nz
+      #    cj3 = ci[3] + z
+      #    if pbc[3]
+      #       cj3 = bin_wrap(cj3, n3)
+      #    end
+      #    # Skip to next z value if neighbour cell is out of simulation bounds
+      #    if cj3 <= 0 || cj3 > n3
+      #       continue
+      #    end
+      #    for y = -ny:ny
+      #       cj2 = ci[2] + y
+      #       if pbc[2]
+      #          cj2 = bin_wrap(cj2, n2)
+      #       end
+      #       # Skip to next y value if cell is out of simulation bounds
+      #       if cj2 <= 0 || cj2 > n2
+      #          continue
+      #       end
+      #
+      #       for x = -nx:nx
+      #          # Bin index of neighbouring bin
+      #          cj1 = ci[1] + x
+      #          if pbc[1]
+      #             cj1 = bin_wrap(cj1, n1)
+      #          end
+      #          # Skip to next x value if cell is out of simulation bounds
+      #          if cj1 <= 0 || cj1 > n1
+      #             continue
+      #          end
+
+      # for (z, cj3) in IT1(ci[3], ns[3], pbc[3], nz),
+      #     (y, cj2) in IT1(ci[2], ns[2], pbc[2], ny),
+      #     (x, cj1) in IT1(ci[1], ns[1], pbc[1], nx)
+      for ((x, cj1), (y, cj2), (z, cj3)) in
+            Base.Iterators.product(IT1(ci[1], ns[1], pbc[1], nx) ,
+                           IT1(ci[2], ns[2], pbc[2], ny),
+                           IT1(ci[3], ns[3], pbc[3], nz) )
+         xyz = SVec{TI}(x, y, z)
+         cj = SVec{TI}(cj1, cj2, cj3)
+         if !all(1 .<= cj .<= ns_vec)
             continue
          end
 
-         for y = -ny:ny
-            cj2 = ci[2] + y
-            if pbc[2]
-               cj2 = bin_wrap(cj2, n2)
-            end
-            # Skip to next y value if cell is out of simulation bounds
-            if cj2 <= 0 || cj2 > n2
-               continue
-            end
+         # linear cell index
+         ncj = sub2ind(ns, cj[1], cj[2], cj[3])
+         # Offset of the neighboring bins
+         off = bins * xyz
 
-            for x = -nx:nx
-               # Bin index of neighbouring bin
-               cj1 = ci[1] + x
-               if pbc[1]
-                  cj1 = bin_wrap(cj1, n1)
+         # Loop over all atoms in neighbouring bin (all potential
+         # neighbours in the bin with linear index cj1)
+         j = seed[ncj] # the first atom in the ncj cell
+         while j > 0
+            if i != j || any(xyz .!= 0)
+               xj = X[j] # position of current neighbour
+
+               # we need to find the cell index again, because this is
+               # not really the cell index, but it could be outside
+               # the domain -> i.e. this only makes a difference for pbc
+               cj = position_to_cell_index(inv_cell, xj, ns_vec)
+               cj = bin_trunc(cj, pbc, ns_vec)
+
+               # drj is position relative to lower left corner of the bin
+               dxj = xj - bins * (cj - 1)
+
+               # Compute distance between atoms
+               dx = dxj - dxi + off
+               norm_dx_sq = dx ⋅ dx
+
+               if norm_dx_sq < cutoff_sq
+                  push!(first, i)
+                  push!(secnd, j)
+                  push!(distvec, dx)
+                  push!(absdist, sqrt(norm_dx_sq))
+                  push!(shift, (ci0 - cj + xyz) .÷ ns_vec)
                end
-               # Skip to next x value if cell is out of simulation bounds
-               if cj1 <= 0 || cj1 > n1
-                  continue
-               end
+            end  # if i != j || any(xyz .!= 0)
 
-               # linear cell index
-               ncj = sub2ind(ns, cj1, cj2, cj3)
+            # go to the next atom in the current cell
+            j = next[j];
 
-               # Offset of the neighboring bins
-               xyz = SVec(x, y, z)
-               off = bins * xyz
+         end # while j > 0 (loop over atoms in current cell)
+      end  # for iteration over bins
 
-               # Loop over all atoms in neighbouring bin (all potential
-               # neighbours in the bin with linear index cj1)
-               j = seed[ncj] # the first atom in the ncj cell
-               while j > 0
-                  if i != j || any(xyz .!= 0)
-                     xj = X[j] # position of current neighbour
+            # end # for x
+      #    end # for y
+      # end # for z
 
-                     # we need to find the cell index again, because this is
-                     # not really the cell index, but it could be outside
-                     # the domain -> i.e. this only makes a difference for pbc
-                     cj = position_to_cell_index(inv_cell, xj, ns_vec)
-                     cj = bin_trunc(cj, pbc, ns_vec)
-
-                     # drj is position relative to lower left corner of the bin
-                     dxj = xj - bins * (cj - 1)
-
-                     # Compute distance between atoms
-                     dx = dxj - dxi + off
-                     norm_dx_sq = dx ⋅ dx
-
-                     if norm_dx_sq < cutoff_sq
-                        push!(first, i)
-                        push!(secnd, j)
-                        push!(distvec, dx)
-                        push!(absdist, sqrt(norm_dx_sq))
-                        push!(shift, (ci0 - cj + xyz) .÷ ns_vec)
-                     end
-                  end  # if i != j || any(xyz .!= 0)
-
-                  # go to the next atom in the current cell
-                  j = next[j];
-
-               end # while j > 0 (loop over atoms in current cell)
-            end # for x
-         end # for y
-      end # for z
    end # for i = 1:nat
 
    # Build return tuple
