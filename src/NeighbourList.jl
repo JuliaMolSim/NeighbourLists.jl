@@ -88,12 +88,6 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
    ns_vec = max.(floor.(TI, lens / cutoff), 1)
    ns = ns_vec.data   # a tuple
 
-   # n1 = max(floor(TI, len1 / cutoff), 1);
-   # n2 = max(floor(TI, len2 / cutoff), 1);
-   # n3 = max(floor(TI, len3 / cutoff), 1);
-   # ns = tuple(n1, n2, n3)
-   # ns_vec = SVec(n1, n2, n3)
-
    if prod(BigInt.(ns_vec)) > typemax(TI)
       error("""Ratio of simulation cell size to cutoff is very large.
                Are you using a cell with lots of vacuum? To fix this
@@ -101,17 +95,9 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
                larger cut-off, or a smaller simulation cell.""")
    end
 
-   # just to double-check everything is sane?
-   # @assert all(ns .> 0)
-
    # Find out over how many neighbor cells we need to loop (if the box is small
-
-   nx = ceil(TI, cutoff * ns[1] / len1)
-   ny = ceil(TI, cutoff * ns[2] / len2)
-   nz = ceil(TI, cutoff * ns[3] / len3)
-   nxyz = ceil.(TI, cutoff * ns_vec ./ lens)
-   @assert nxyz == SVec(nx, ny, nz)
-   cxyz = CartesianIndex((nx, ny, nz))
+   nxyz = ceil.(TI, cutoff * (ns_vec ./ lens))
+   cxyz = CartesianIndex(nxyz.data)
    xyz_range = CartesianRange(- cxyz, cxyz)
 
    # ------------ Sort particles into bins -----------------
@@ -129,7 +115,6 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
       c = bin_wrap_or_trunc.(c, pbc, ns_vec)
       # linear cell index  # (+1 due to 1-based indexing)
       ci = sub2ind(ns, c)
-
       # sanity check
       # @assert all(1 .<= c .<= ns_vec)
       # @assert 1 <= ci <= ncells
@@ -221,9 +206,7 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
 
             # go to the next atom in the current cell
             j = next[j];
-
          end # while j > 0 (loop over atoms in current cell)
-
       end # loop over neighbouring bins
    end # for i = 1:nat
 
