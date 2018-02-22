@@ -23,7 +23,7 @@ perbc = JVec(pbc(at))
 cutoff = 2.1 * rnn("Si")
 
 println("Julia Nlist")
-@btime NeighbourList.neighbour_list(C, perbc, X, cutoff)
+@btime CellList(X, cutoff, C, perbc)
 println("Matscipy Nlist")
 @btime matscipy_nlist(at, cutoff)
 
@@ -39,7 +39,7 @@ perbc = JVec(pbc(at))
 cutoff = 2.1 * rnn("Si")
 
 println("Julia Nlist")
-@btime NeighbourList.neighbour_list(C, perbc, X, cutoff)
+@btime CellList(X, cutoff, C, perbc)
 println("Matscipy Nlist")
 @btime matscipy_nlist(at, cutoff)
 

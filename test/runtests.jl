@@ -3,15 +3,9 @@ using Base.Test
 using JuLIP
 
 function test_nlist(at, cutoff)
-   C = JMat(cell(at))
-   X = positions(at)
-   perbc = JVec(pbc(at))
-   i, j, r, R, S = NeighbourList.neighbour_list(C, perbc, X, cutoff)
+   cl = CellList(positions(at), cutoff, cell(at), pbc(at))
    nlist = neighbourlist(at, cutoff)
-   @test (i == nlist.i) && (j == nlist.j) && (S == nlist.S) &&
-      (vecnorm(r - nlist.r, Inf) < 1e-14) &&
-      (maximum(norm.(R - nlist.R, Inf)) < 1e-14)
-   # @test (i == nlist.i) && (j == nlist.j)
+   @test (cl.i == nlist.i) && (cl.j == nlist.j) && (cl.S == nlist.S)
 end
 
 @testset "NeighbourList" begin
