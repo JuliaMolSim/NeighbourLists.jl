@@ -7,8 +7,16 @@
 [![codecov.io](http://codecov.io/github/cortner/NeighbourList.jl/coverage.svg?branch=master)](http://codecov.io/github/cortner/NeighbourList.jl?branch=master) -->
 
 A Julia port of the neighbourlist implemented in
-[matscipy](https://github.com/libAtoms/matscipy).  The Julia version is faster
-than matscipy for small systems, probably due  to the overhead of dealing with
-Python, but on large systems it is  about 30% slower.
+[matscipy](https://github.com/libAtoms/matscipy) (with the authors' permission).
+The Julia version is faster than matscipy for small systems, probably due  to
+the overhead of dealing with Python, but on large systems it is  about 30%
+slower.
 
 For now, see `test/runtests.jl` to look at how to use it.
+
+### TODO
+
+* multi-threading
+* 2D
+* Neighbourlist type + iterators
+* implement and compare against neighbourlist based on NearestNeighbours.jl
