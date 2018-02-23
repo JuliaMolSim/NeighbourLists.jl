@@ -9,7 +9,7 @@ function mapreduce!{T}(Es::Vector{T}, f, it::PairIterator{T})
    @simd for n = 1:npairs(nlist)
       @inbounds Es[nlist.i[n]] += f(nlist.r[n], nlist.R[n])
    end
-   return out
+   return Es
 end
 
 function mapreduce!{T}(out::Vector{SVec{T}}, df, it::PairIterator{T})

@@ -19,6 +19,8 @@ include("core.jl")
 Basic `NeighbourList` type. Typically, this is constructed using
 """
 struct CellList{T <: AbstractFloat, TI <: Integer}
+   X::Vector{SVec{T}}
+   cutoff::T
    i::Vector{TI}
    j::Vector{TI}
    r::Vector{T}
@@ -35,11 +37,11 @@ function CellList{T}(X::Vector{SVec{T}}, cutoff::AbstractFloat,
                      int_type::Type = Int)
    i, j, r, R, S = _neighbour_list_(SMat{T}(cell...), SVec{Bool}(pbc...), X,
                                     cutoff, zero(int_type))
-   return CellList(i, j, r, R, S, get_first(i, length(X)))
+   return CellList(X, cutoff, i, j, r, R, S, get_first(i, length(X)))
 end
 
 CellList{T}(X::Matrix{T}, args...; kwargs...) =
-      CellList(reinterpret(SVec{T}, X, (size(X,2),)))
+      CellList(reinterpret(SVec{T}, X, (size(X,2),)), args...; varargs...)
 
 npairs(nlist::CellList) = length(nlist.i)
 nsites(nlist::CellList) = length(nlist.first)

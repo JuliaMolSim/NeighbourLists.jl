@@ -16,7 +16,7 @@ For now, see `test/runtests.jl` to look at how to use it.
 
 ### TODO
 
-* multi-threading
 * 2D
 * iterators
+* multi-threading for neighbourlist construction and for iterators
 * implement and compare against neighbourlist based on NearestNeighbours.jl
