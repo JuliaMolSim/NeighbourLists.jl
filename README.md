@@ -18,5 +18,5 @@ For now, see `test/runtests.jl` to look at how to use it.
 
 * multi-threading
 * 2D
-* Neighbourlist type + iterators
+* iterators
 * implement and compare against neighbourlist based on NearestNeighbours.jl

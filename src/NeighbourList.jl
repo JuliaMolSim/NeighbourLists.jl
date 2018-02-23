@@ -9,6 +9,12 @@ const SMat{T} = SMatrix{3, 3, T, 9}
 
 export CellList, npairs, nsites
 
+
+# this contains the neighourlist assemby routine
+include("core.jl")
+
+# ==================== GateWay Routines  ================
+
 """
 Basic `NeighbourList` type. Typically, this is constructed using
 """
@@ -20,11 +26,6 @@ struct CellList{T <: AbstractFloat, TI <: Integer}
    S::Vector{SVec{TI}}
    first::Vector{TI}
 end
-
-# this contains the neighourlist assemby routine
-include("core.jl")
-
-# ==================== GateWay Routines  ================
 
 # TODO: consider redefining the cell in terms of the
 #       extent of X
