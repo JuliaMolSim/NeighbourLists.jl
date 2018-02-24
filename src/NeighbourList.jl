@@ -44,7 +44,7 @@ CellList{T}(X::Matrix{T}, args...; kwargs...) =
       CellList(reinterpret(SVec{T}, X, (size(X,2),)), args...; varargs...)
 
 npairs(nlist::CellList) = length(nlist.i)
-nsites(nlist::CellList) = length(nlist.first)
+nsites(nlist::CellList) = length(nlist.first) - 1
 
 # this contains the different iterators over sites, bonds, etc
 include("iterators.jl")

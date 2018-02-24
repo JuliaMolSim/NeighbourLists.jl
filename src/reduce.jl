@@ -1,29 +1,85 @@
 
-import Base.mapreduce
+import Base.map!
 
-export mapreduce!, mapreduce_d
+export mapreduce!, mapreduce_sym!, mapreduce_antisym!, map_cfd!
 
 
-function mapreduce!{T}(Es::Vector{T}, f, it::PairIterator{T})
+"""
+mapreduce!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})
+
+basically a bin_sum, iterate over all pairs, for each pair evaluate
+f(r, R) and add it to out[i] (the first)
+"""
+function mapreduce!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})
    nlist = it.nlist
-   @simd for n = 1:npairs(nlist)
-      @inbounds Es[nlist.i[n]] += f(nlist.r[n], nlist.R[n])
-   end
-   return Es
-end
-
-function mapreduce!{T}(out::Vector{SVec{T}}, df, it::PairIterator{T})
-   nlist = it.nlist
-   @simd for n = 1:npairs(nlist)
-      df_ = df(nlist.r[n], nlist.R[n])
-      out[nlist.j[n]] += df_
-      out[nlist.i[n]] -= df_
+   for n = 1:npairs(nlist)
+      out[nlist.i[n]] += f(nlist.r[n], nlist.R[n])
    end
    return out
 end
 
-mapreduce{T}(f, it::PairIterator{T}) =
-      mapreduce!(zeros(T, nsites(it.nlist)), f, it)
 
-mapreduce_d{T}(df, it::PairIterator{T}) =
-      mapreduce!(zeros(SVec{T}, nsites(it.nlist)), df, it)
+"""
+`mapreduce_sym!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})`
+
+symmetric variant of `mapreduce!{S, T}(out::AbstractVector{S}, ...)`, summing only
+over bonds (i,j) with i < j and adding f(R_ij) to both sites i, j.
+"""
+function mapreduce_sym!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})
+   nlist = it.nlist
+   for n = 1:npairs(nlist)
+      if  nlist.i[n] < nlist.j[n]    # NB this probably prevents simd
+         f_ = f(nlist.r[n], nlist.R[n])
+         out[nlist.i[n]] += f_
+         out[nlist.j[n]] += f_
+      end
+   end
+   return out
+end
+
+
+"""
+`mapreduce_antisym!{T}(out::AbstractVector{SVec{T}}, df, it::PairIterator{T})`
+
+anti-symmetric variant of `mapreduce!{S, T}(out::AbstractVector{S}, ...)`, summing only
+over bonds (i,j) with i < j and adding f(R_ij) to site j and
+-f(R_ij) to site i.
+"""
+function mapreduce_antisym!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})
+   nlist = it.nlist
+   for n = 1:npairs(nlist)
+      if nlist.i[n] < nlist.j[n]
+         f_ = f(nlist.r[n], nlist.R[n])
+         out[nlist.j[n]] += f_
+         out[nlist.i[n]] -= f_
+      end
+   end
+   return out
+end
+
+
+# ============ for assembly over sites
+
+function map!{S,T}(f, out::AbstractVector{S}, it::SiteIterator{T})
+   nlist = it.nlist
+   for i = 1:nsites(nlist)
+      j, r, R = site(nlist, i)
+      out[i] = f(r, R)
+   end
+   return out
+end
+
+function map_cfd!{S,T}(f, out::AbstractVector{S}, it::SiteIterator{T})
+   nlist = it.nlist
+   for i = 1:nsites(nlist)
+      j, r, R = site(nlist, i)
+      f_ = f(r, R)
+      out[j] += f_
+      out[i] -= sum(f_)
+   end
+   return out
+end
+
+
+
+# ============ for assembly over n-body terms
