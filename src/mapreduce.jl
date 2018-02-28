@@ -1,7 +1,8 @@
 
 import Base.map!
 
-export mapreduce!, mapreduce_sym!, mapreduce_antisym!, map_cfd!
+export mapreduce!, mapreduce_sym!, mapreduce_antisym!, map_d!,
+   mapreduce_d!, mapreduce_sym_d!
 
 
 """
@@ -57,6 +58,9 @@ function mapreduce_antisym!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T}
    return out
 end
 
+mapreduce_d!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T}) =
+   mapreduce_antisym!(out, f, it)
+
 
 # ============ assembly over sites
 
@@ -69,7 +73,7 @@ function map!{S,T}(f, out::AbstractVector{S}, it::SiteIterator{T})
    return out
 end
 
-function map_cfd!{S,T}(f, out::AbstractVector{S}, it::SiteIterator{T})
+function map_d!{S,T}(f, out::AbstractVector{S}, it::SiteIterator{T})
    nlist = it.nlist
    for i = 1:nsites(nlist)
       j, r, R = site(nlist, i)
@@ -84,19 +88,74 @@ end
 
 # ============ assembly over n-body terms
 
-# function mapreduce_sym!{S,T}(f, out::AbstractVector{S}, it::NBodyIterator{3,T})
-#    nlist = it.nlist
-#    for (i, j, r, R) in sites(nlist)
-#       for a = 1:length(j), b = 1:length(j)
-#          if !(i < j[a] < j[b])
-#             continue
-#          end
-#          s = SVector{3, T}(r[a], norm(R[b]-R[a]), r[b])
-#          f_ = f(s) / 3.0
-#          out[i] += f_
-#          out[j[a]] += f_
-#          out[j[b]] += f_
-#       end
-#    end
-#    return out
-# end
+struct NBodyIterator{N, T, TI}
+   nlist::CellList{T,TI}
+   order::Val{N}
+end
+
+
+"""
+`function _find_next_(j, n, first)`
+
+* `j` : array of neighbour indices
+* `n` : current site index
+* `first` : array of first indices
+
+return the first index `first[n] <= m < first[n]` such that `j[m] > n`;
+and returns 0 if no such index exists
+"""
+function _find_next_{TI}(j::Vector{TI}, n::TI, first::Vector{TI})
+   # DEBUG CODE
+   # @assert issorted(j[first[n]:first[n+1]-1])
+   for m = first[n]:first[n+1]-1
+      if j[m] > n
+         return m
+      end
+   end
+   return zero(TI)
+end
+
+function mapreduce_sym!{S,T}(f, out::AbstractVector{S}, it::NBodyIterator{3,T})
+   nlist = it.nlist
+   for n = 1:nsites(nlist)
+      # get the index of a neighbour > n
+      a0 = _find_next_(nlist.j, n, nlist.first)
+      if a0 == 0; continue; end  # (if no such index exists)
+      # get the index up to which to loop
+      a1 = nlist.first[n+1]-1
+      # loop over unique ordered tuples
+      for a = a0:a1-1, b = a0+1:a1
+         s = SVector{3, T}(r[a], norm(R[b]-R[a]), r[b])
+         f_ = f(s) / 3.0
+         out[n] += f_
+         out[nlist.j[a]] += f_
+         out[nlist.j[b]] += f_
+      end
+   end
+   return out
+end
+
+
+function mapreduce_sym_d!{S,T}(f, out::AbstractVector{S}, it::NBodyIterator{3,T})
+   i, j, r, R, first = it.nlist.i, it.nlist.j, it.nlist.r, it.nlist.R, it.nlist.first
+   for n = 1:nsites(it.nlist)
+      # get the index of a neighbour > n
+      a0 = _find_next_(j, n, first)
+      if a0 == 0; continue; end  # (if no such index exists)
+      # get the index up to which to loop
+      a1 = first[n+1]-1
+      # loop over unique ordered tuples
+      for a = a0:a1-1, b = a0+1:a1
+         rab = norm(R[b]-R[a])
+         s = SVector{3, T}(r[a], rab, r[b])
+         f_ = f(s) / 3.0
+         f1a = (f_[1]/r[a]) * R[a]
+         f2ab = (f_[2]/rab) * (R[a]-R[b])
+         f3b = (f_[3]/r[b]) * R[b]
+         out[n] += - f1a  - f3b
+         out[j[a]] += f1a + f2ab
+         out[j[b]] += - f2ab + f3b
+      end
+   end
+   return out
+end
