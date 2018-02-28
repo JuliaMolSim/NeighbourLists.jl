@@ -1,4 +1,48 @@
 
+# ================= types and wrapper stuff ======================
+
+"""
+`CellList` stores a neighbourlist that is constructed from a cell-list
+(it isn't actually stored as a cell-list).
+Typically, this is constructed using
+```
+CellList(X, cutoff, cell, pbc)
+```
+where
+
+* `X` : positions, either as 3 x N matrix or as `Vector{SVec}`
+* `cutoff` : positive real value
+* `cell` : 3 x 3 matrix, with rows denoting the cell vectors
+* `pbc` : 3-tuple or array, storing periodicity information
+"""
+struct CellList{T <: AbstractFloat, TI <: Integer}
+   X::Vector{SVec{T}}
+   cutoff::T
+   i::Vector{TI}
+   j::Vector{TI}
+   r::Vector{T}
+   R::Vector{SVec{T}}
+   S::Vector{SVec{TI}}
+   first::Vector{TI}
+end
+
+# TODO: consider redefining the cell in terms of the
+#       extent of X
+
+function CellList{T}(X::Vector{SVec{T}}, cutoff::AbstractFloat,
+                     cell::AbstractMatrix, pbc;
+                     int_type::Type = Int)
+   i, j, r, R, S = _neighbour_list_(SMat{T}(cell...), SVec{Bool}(pbc...), X,
+                                    cutoff, zero(int_type))
+   return CellList(X, cutoff, i, j, r, R, S, get_first(i, length(X)))
+end
+
+CellList{T}(X::Matrix{T}, args...; kwargs...) =
+      CellList(reinterpret(SVec{T}, X, (size(X,2),)), args...; varargs...)
+
+npairs(nlist::CellList) = length(nlist.i)
+nsites(nlist::CellList) = length(nlist.first) - 1
+
 
 # ====================== Cell Index Algebra =====================
 
@@ -45,7 +89,7 @@ lengths{T}(C::SMat{T}) =
 
 
 
-# ==================== Main NeighbourList Core  ================
+# ==================== CellList Core  ================
 
 
 """
@@ -81,14 +125,14 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
                larger cut-off, or a smaller simulation cell.""")
    end
 
-   # Find out over how many neighbor cells we need to loop (if the box is small
+   # Find out over how many neighbor cells we need to loop (if the box is small)
    nxyz = ceil.(TI, cutoff * (ns_vec ./ lens))
    cxyz = CartesianIndex(nxyz.data)
    xyz_range = CartesianRange(- cxyz, cxyz)
 
    # ------------ Sort particles into bins -----------------
    nat = length(X)
-   ncells = prod(ns)
+   ncells = prod(ns_vec)
    # data structure to store a linked list for each bin
    seed = fill(TI(-1), ncells)
    last = Vector{TI}(ncells)
@@ -100,7 +144,7 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
       # Periodic/non-periodic boundary conditions
       c = bin_wrap_or_trunc.(c, pbc, ns_vec)
       # linear cell index  # (+1 due to 1-based indexing)
-      ci = sub2ind(ns, c)
+      ci = sub2ind(ns, c)   # <<<<
       # sanity check
       # @assert all(1 .<= c .<= ns_vec)
       # @assert 1 <= ci <= ncells
@@ -157,7 +201,7 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
          # skip this bin if not inside the domain
          all(1 .<= cj .<= ns_vec) || continue
          # linear cell index
-         ncj = sub2ind(ns, cj)
+         ncj = sub2ind(ns, cj)    # <<<<<<<<
          # Offset of the neighboring bins
          off = bins * xyz
 

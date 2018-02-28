@@ -1,4 +1,4 @@
-using NeighbourList
+using NeighbourLists
 using JuLIP
 using BenchmarkTools
 using PyCall
@@ -55,6 +55,6 @@ println("Matscipy Nlist")
 # cutoff = 2.1 * rnn("Si")
 #
 # println("Julia Nlist")
-# @btime NeighbourList.neighbour_list(C, perbc, X, cutoff)
+# @btime NeighbourLists.neighbour_list(C, perbc, X, cutoff)
 # println("Matscipy Nlist")
 # @btime matscipy_nlist(at, cutoff)

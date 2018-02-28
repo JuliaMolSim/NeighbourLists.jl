@@ -58,7 +58,7 @@ function mapreduce_antisym!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T}
 end
 
 
-# ============ for assembly over sites
+# ============ assembly over sites
 
 function map!{S,T}(f, out::AbstractVector{S}, it::SiteIterator{T})
    nlist = it.nlist
@@ -82,4 +82,21 @@ end
 
 
 
-# ============ for assembly over n-body terms
+# ============ assembly over n-body terms
+
+# function mapreduce_sym!{S,T}(f, out::AbstractVector{S}, it::NBodyIterator{3,T})
+#    nlist = it.nlist
+#    for (i, j, r, R) in sites(nlist)
+#       for a = 1:length(j), b = 1:length(j)
+#          if !(i < j[a] < j[b])
+#             continue
+#          end
+#          s = SVector{3, T}(r[a], norm(R[b]-R[a]), r[b])
+#          f_ = f(s) / 3.0
+#          out[i] += f_
+#          out[j[a]] += f_
+#          out[j[b]] += f_
+#       end
+#    end
+#    return out
+# end

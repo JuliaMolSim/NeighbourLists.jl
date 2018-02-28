@@ -1,10 +1,10 @@
-# NeighbourList.jl
+# NeighbourLists.jl
 
-<!-- [![Build Status](https://travis-ci.org/cortner/NeighbourList.jl.svg?branch=master)](https://travis-ci.org/cortner/NeighbourList.jl)
+<!-- [![Build Status](https://travis-ci.org/cortner/NeighbourLists.jl.svg?branch=master)](https://travis-ci.org/cortner/NeighbourLists.jl)
 
-[![Coverage Status](https://coveralls.io/repos/cortner/NeighbourList.jl/badge.svg?branch=master&service=github)](https://coveralls.io/github/cortner/NeighbourList.jl?branch=master)
+[![Coverage Status](https://coveralls.io/repos/cortner/NeighbourLists.jl/badge.svg?branch=master&service=github)](https://coveralls.io/github/cortner/NeighbourLists.jl?branch=master)
 
-[![codecov.io](http://codecov.io/github/cortner/NeighbourList.jl/coverage.svg?branch=master)](http://codecov.io/github/cortner/NeighbourList.jl?branch=master) -->
+[![codecov.io](http://codecov.io/github/cortner/NeighbourLists.jl/coverage.svg?branch=master)](http://codecov.io/github/cortner/NeighbourLists.jl?branch=master) -->
 
 A Julia port of the neighbourlist implemented in
 [matscipy](https://github.com/libAtoms/matscipy) (with the authors' permission).

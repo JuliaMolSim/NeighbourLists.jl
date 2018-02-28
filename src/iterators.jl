@@ -36,4 +36,4 @@ next(it::SiteIterator, i::Integer) = (i, site(it.nlist, i)...), inc(i)
 
 
 
-# -------------- iterator over bond-angles ---------------
+# -------------- iterator over n-body ---------------

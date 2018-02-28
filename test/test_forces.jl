@@ -1,5 +1,5 @@
 
-using NeighbourList
+using NeighbourLists
 using JuLIP, JuLIP.Potentials, StaticArrays
 
 
@@ -61,11 +61,11 @@ end
 
 function eam_iter{T}(nlist::CellList{T}, V)
    Es = zeros(T, nsites(nlist))
-   for (i, _1, r, R) in NeighbourList.sites(nlist)
+   for (i, _1, r, R) in NeighbourLists.sites(nlist)
       Es[i] += V(r, R)
    end
    dE = zeros(JVec{T}, nsites(nlist))
-   for (i, j, r, R) in NeighbourList.sites(nlist)
+   for (i, j, r, R) in NeighbourLists.sites(nlist)
       dV = @D V(r, R)
       dE[j] += dV
       dE[i] -= sum(dV)
@@ -73,10 +73,29 @@ function eam_iter{T}(nlist::CellList{T}, V)
    return Es, dE
 end
 
+function eam_iter!{T}(nlist::CellList{T}, V)
+   Es = zeros(T, nsites(nlist))
+   for (i, _1, r, R) in NeighbourLists.sites(nlist)
+      Es[i] += V(r, R)
+   end
+   dE = zeros(JVec{T}, nsites(nlist))
+   ndv = maximum(length(j) for (i, j, r, R) in NeighbourLists.sites(nlist))
+   dV = zeros(JVec{T}, ndv)
+   for (i, j, r, R) in NeighbourLists.sites(nlist)
+      fill!(dV, zero(JVec{T}))
+      JuLIP.Potentials.evaluate_d!(dV, V, r, R)
+      for a = 1:length(j)
+         dE[j[a]] += dV[a]
+         dE[i] -= dV[a]
+      end
+   end
+   return Es, dE
+end
+
 function eam_mapreduce{T}(nlist::CellList{T}, V)
-   Es = map!(V, zeros(T, nsites(nlist)), NeighbourList.sites(nlist))
+   Es = map!(V, zeros(T, nsites(nlist)), NeighbourLists.sites(nlist))
    dE = map_cfd!((r, R) -> (@D V(r,R)), zeros(JVec{T}, nsites(nlist)),
-                NeighbourList.sites(nlist))
+                NeighbourLists.sites(nlist))
 end
 
 println("----------------------------------------")
@@ -100,4 +119,7 @@ for L in (5, 10, 20)
    println("Energy + Force assembly MapReduce:")
    @time eam_mapreduce(nlist, eam)
    @time eam_mapreduce(nlist, eam)
+   println("Energy + Force assembly In-place Iterator:")
+   @time eam_iter!(nlist, eam)
+   @time eam_iter!(nlist, eam)
 end
