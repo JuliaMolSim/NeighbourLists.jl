@@ -14,6 +14,12 @@ where
 * `cutoff` : positive real value
 * `cell` : 3 x 3 matrix, with rows denoting the cell vectors
 * `pbc` : 3-tuple or array, storing periodicity information
+
+### Kw-args:
+
+* `int_type` : default is `Int`
+* `store_first` : whether to store the array of first indices, default `true`
+* `sorted` : whether to sort the `j` vector, default `false`
 """
 struct CellList{T <: AbstractFloat, TI <: Integer}
    X::Vector{SVec{T}}
@@ -31,10 +37,21 @@ end
 
 function CellList{T}(X::Vector{SVec{T}}, cutoff::AbstractFloat,
                      cell::AbstractMatrix, pbc;
-                     int_type::Type = Int)
+                     int_type::Type = Int, store_first = true,
+                     sorted = false)
    i, j, r, R, S = _neighbour_list_(SMat{T}(cell...), SVec{Bool}(pbc...), X,
                                     cutoff, zero(int_type))
-   return CellList(X, cutoff, i, j, r, R, S, get_first(i, length(X)))
+   if store_first
+      first = get_first(i, length(X))
+   else
+      first = zeros(int_type, 0)
+   end
+
+   if store_first && sorted
+      sort_neigs!(j, r, R, S, first)
+   end
+
+   return CellList(X, cutoff, i, j, r, R, S, first)
 end
 
 CellList{T}(X::Matrix{T}, args...; kwargs...) =
@@ -246,6 +263,19 @@ end
 
 
 
+# ==================== Bonus Stuff =========================
+
+"""
+`get_first(i::Vector{TI}, nat::Integer) -> first::Vector{TI}
+where TI <: Integer`
+
+Assumes that `i` is sorted in ascending order.
+For `n = 1, . . ., nat`, `first[n]` will be the index to the first
+element of `i` with value `n`. Further, `first[nat+1]` will be
+`length(i) + 1`.
+
+If `first[n] == first[n+1]` then this means that `i` contains no element `n`.
+"""
 function get_first{TI}(i::Vector{TI}, nat::Integer = i[end])
    # compute the first index for each site
    first = Vector{TI}(nat + 1)
@@ -263,4 +293,25 @@ function get_first{TI}(i::Vector{TI}, nat::Integer = i[end])
    end
    first[n:end] = length(i)+1
    return first
+end
+
+
+"""
+`sort_neigs!(j, r, R, first)`
+
+sorts each sub-range of `j` corresponding to one site  in ascending order
+and applies the same permutation to `r, R, S`.
+"""
+function sort_neigs!(j, r, R, S, first)
+   for n = 1:length(first)-1
+      if first[n+1] > first[n] + 1
+         rg = first[n]:first[n+1]-1
+         I = sortperm(@view j[rg])
+         rg_perm = rg[I]
+         j[rg] = j[rg_perm]
+         r[rg] = r[rg_perm]
+         R[rg] = R[rg_perm]
+         S[rg] = S[rg_perm]
+      end
+   end
 end
