@@ -20,6 +20,17 @@ where
 * `int_type` : default is `Int`
 * `store_first` : whether to store the array of first indices, default `true`
 * `sorted` : whether to sort the `j` vector, default `false`
+
+### CellList fields
+
+`i, j, r, R, first`, where
+
+`(i[n], j[n])` denotes the indices of a neighbour pair, `r[n]` the distance
+between those atoms, `R[n]` the vectorial distance, note this is identical to
+`X[i[n]]-X[j[n]]` without periodic b.c.s, but with periodic boundary conditions
+it is different. `first[m]` contains the index to the first `(i[n], j[n])` for
+which `i[n] == first[m]`, i.e., `(j, first)` essentially defines a compressed
+columns storage of the adjacancy matrix.
 """
 struct CellList{T <: AbstractFloat, TI <: Integer}
    X::Vector{SVec{T}}
