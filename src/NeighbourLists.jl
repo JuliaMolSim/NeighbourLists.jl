@@ -13,10 +13,6 @@ export CellList, npairs, nsites
 # this contains the cell-list data structures and assembly
 include("cell_list.jl")
 
-# experimental: NearestNeighbors.jl based implementation of
-# the neighbourlist assembly 
-include("nn_list.jl")
-
 # this contains the different iterators over sites, bonds, etc
 include("iterators.jl")
 
