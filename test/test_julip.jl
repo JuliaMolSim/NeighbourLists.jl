@@ -1,8 +1,11 @@
 
+using JuLIP
+using Base.Test
 
+if hasjulip
 
-if !CI
-
+   # this is kind of meaningless, we need to switch this test to compare
+   # against ASE 
    function test_nlist_julip(at, cutoff)
       cl = CellList(positions(at), cutoff, cell(at), pbc(at))
       nlist = neighbourlist(at, cutoff)
@@ -33,6 +36,7 @@ if !CI
      2.1 * rnn(:Si) ),
    ]
 
+   println("JuLIP Configuration tests:")
    for (i, (descr, at, cutoff)) in enumerate(test_configs)
       println("TEST $i: $descr")
       @test test_nlist_julip(at, cutoff)
