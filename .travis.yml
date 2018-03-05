@@ -29,7 +29,7 @@ addons:
 
 ## uncomment the following lines to override the default test script
 script:
- - julia -e 'Pkg.add("PyAMG"); Pkg.add("JuLIP"); Pkg.checkout("JuLIP", "jatoms"); Pkg.clone(pwd()); Pkg.build("NeighbourLists"); Pkg.test("NeighbourLists"; coverage=true)'
+ - julia -e 'Pkg.clone(pwd()); Pkg.build("NeighbourLists"); Pkg.test("NeighbourLists"; coverage=true)'
 after_success:
   # push coverage results to Coveralls
   - julia -e 'cd(Pkg.dir("NeighbourLists")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder())'
