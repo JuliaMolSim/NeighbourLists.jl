@@ -23,7 +23,7 @@ perbc = JVec(pbc(at))
 cutoff = 2.1 * rnn("Si")
 
 println("Julia Nlist")
-@btime CellList(X, cutoff, C, perbc)
+@btime CellList(X, cutoff, C, perbc, neig_guess = 28, sorted = false)
 println("Matscipy Nlist")
 @btime matscipy_nlist(at, cutoff)
 
@@ -39,22 +39,22 @@ perbc = JVec(pbc(at))
 cutoff = 2.1 * rnn("Si")
 
 println("Julia Nlist")
-@btime CellList(X, cutoff, C, perbc)
+@btime CellList(X, cutoff, C, perbc, neig_guess = 28, sorted = false)
 println("Matscipy Nlist")
 @btime matscipy_nlist(at, cutoff)
 
 
-# print("L = 30")
-# # si, non-cubic cell, mixed bc
-# at = bulk("Si", cubic=true) * 30
-# println(", N = $(length(at))")
-# set_pbc!(at, (true, false, true))
-# C = JMat(cell(at))
-# X = positions(at)
-# perbc = JVec(pbc(at))
-# cutoff = 2.1 * rnn("Si")
-#
-# println("Julia Nlist")
-# @btime NeighbourLists.neighbour_list(C, perbc, X, cutoff)
-# println("Matscipy Nlist")
-# @btime matscipy_nlist(at, cutoff)
+print("L = 30")
+# si, non-cubic cell, mixed bc
+at = bulk("Si", cubic=true) * 30
+println(", N = $(length(at))")
+set_pbc!(at, (true, false, true))
+C = JMat(cell(at))
+X = positions(at)
+perbc = JVec(pbc(at))
+cutoff = 2.1 * rnn("Si")
+
+println("Julia Nlist")
+@btime CellList(X, cutoff, C, perbc, neig_guess = 28, sorted = false)
+println("Matscipy Nlist")
+@btime matscipy_nlist(at, cutoff)

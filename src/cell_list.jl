@@ -38,9 +38,9 @@ end
 function CellList{T}(X::Vector{SVec{T}}, cutoff::AbstractFloat,
                      cell::AbstractMatrix, pbc;
                      int_type::Type = Int, store_first = true,
-                     sorted = false)
+                     sorted = false, neig_guess = 12)
    i, j, r, R, S = _neighbour_list_(SMat{T}(cell...), SVec{Bool}(pbc...), X,
-                                    cutoff, zero(int_type))
+                                    cutoff, zero(int_type), neig_guess)
    if store_first
       first = get_first(i, length(X))
    else
@@ -119,7 +119,7 @@ _neighbour_list_(cell, pbc, X, cutoff, _): inner neighbourlist assembly
 * `     _::TI`              : a number specifying the integer type to be used
 """
 function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{T}},
-                           cutoff::T, _::TI)
+                           cutoff::T, ::TI, neigs_guess::Integer = 12)
 
    # ----------- analyze cell --------------
    # check the cell volume (allow only 3D volumes!)
@@ -180,7 +180,7 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
 
    # ------------ Start actual neighbourlist assembly ----------
    # allocate neighbourlist information (can make a better guess?)
-   szhint = nat*6    # Initial guess for neighbour list size
+   szhint = nat*12    # Initial guess for neighbour list size
    first   = Vector{TI}();       sizehint!(first, szhint)   # i
    secnd   = Vector{TI}();       sizehint!(secnd, szhint)   # j -> (i,j) is a bond
    absdist = Vector{T}();        sizehint!(absdist, szhint) # Xj - Xi
@@ -247,7 +247,7 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
                   push!(secnd, j)
                   push!(distvec, dx)
                   push!(absdist, sqrt(norm_dx_sq))
-                  push!(shift, (ci0 - cj + xyz) .÷ ns_vec)
+                  # push!(shift, (ci0 - cj + xyz) .÷ ns_vec)
                end
             end  # if i != j || any(xyz .!= 0)
 
@@ -311,7 +311,7 @@ function sort_neigs!(j, r, R, S, first)
          j[rg] = j[rg_perm]
          r[rg] = r[rg_perm]
          R[rg] = R[rg_perm]
-         S[rg] = S[rg_perm]
+         # S[rg] = S[rg_perm]
       end
    end
 end
