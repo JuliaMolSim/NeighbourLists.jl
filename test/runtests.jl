@@ -1,25 +1,33 @@
 using NeighbourLists
 using Base.Test
-using JuLIP
 
+# ---- FLAGS -----
+
+# whether to run performance tests
 performance = false
 
-function test_nlist(at, cutoff)
-   cl = CellList(positions(at), cutoff, cell(at), pbc(at))
-   nlist = neighbourlist(at, cutoff)
-   @test (cl.i == nlist.i) && (cl.j == nlist.j) && (cl.S == nlist.S)
+# check whether on CI
+isCI = haskey(ENV, "CI")
+notCI = !isCI
+
+# check whether we have JuLIP
+hasjulip = false
+try
+   using JuLIP
+catch
+   hasjulip = true
 end
 
+# ----------------- TESTS -------------------
 
-@testset "NeighbourLists" begin
-   include("test_celllist.jl")
+@testset "NeighbourLists" begin include("test_celllist.jl") end
+
+
+if hasjulip
+   @testset "JuLIP" begin include("test_julip.jl") end
 end
 
-
-if performance
+if performance && hasjulip 
    println("`NeighbourLists` Performance Tests:")
    include("profile.jl")
 end
-
-
-# include("test_forces.jl")

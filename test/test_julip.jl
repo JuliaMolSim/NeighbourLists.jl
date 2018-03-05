@@ -1,5 +1,16 @@
 
-test_configs = [
+
+
+if !CI
+
+   function test_nlist_julip(at, cutoff)
+      cl = CellList(positions(at), cutoff, cell(at), pbc(at))
+      nlist = neighbourlist(at, cutoff)
+      return (cl.i == nlist.i) && (cl.j == nlist.j) && (cl.S == nlist.S)
+   end
+
+
+   test_configs = [
     #
    ( "si, cubic, cluster, short",
      set_pbc!(bulk(:Si, cubic=true) * 3, false),
@@ -21,3 +32,10 @@ test_configs = [
      set_pbc!(bulk(:Si) * 5, false),
      2.1 * rnn(:Si) ),
    ]
+
+   for (i, (descr, at, cutoff)) in enumerate(test_configs)
+      println("TEST $i: $descr")
+      @test test_nlist_julip(at, cutoff)
+   end
+
+end
