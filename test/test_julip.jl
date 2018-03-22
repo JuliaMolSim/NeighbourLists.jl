@@ -4,12 +4,12 @@ using Base.Test
 
 if hasjulip
 
-   # this is kind of meaningless, we need to switch this test to compare
-   # against ASE 
+   # this is now completely meaningless, we need to switch this test to compare
+   # against ASE / matscipy
    function test_nlist_julip(at, cutoff)
-      cl = CellList(positions(at), cutoff, cell(at), pbc(at))
+      cl = PairList(positions(at), cutoff, cell(at), pbc(at))
       nlist = neighbourlist(at, cutoff)
-      return (cl.i == nlist.i) && (cl.j == nlist.j) && (cl.S == nlist.S)
+      return (cl.i == nlist.i) && (cl.j == nlist.j)
    end
 
 

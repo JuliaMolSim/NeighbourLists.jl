@@ -2,7 +2,8 @@ using NeighbourLists
 using JuLIP
 using BenchmarkTools
 using PyCall
-using ProfileView
+using ASE
+# using ProfileView
 
 # @pyimport matscipy.neighbours as matscipy_neighbours
 matscipy_neighbours = pyimport("matscipy.neighbours")
@@ -12,49 +13,22 @@ function matscipy_nlist(at, cutoff)
           NTuple{5, PyArray}, "ijdDS", at.po, cutoff)
 end
 
-print("L = 4")
-# si, non-cubic cell, mixed bc
-at = bulk(:Si, cubic=true) * 4
-println(", N = $(length(at))")
-set_pbc!(at, (true, false, true))
-C = JMat(cell(at))
-X = positions(at)
-perbc = JVec(pbc(at))
-cutoff = 2.1 * rnn(:Si)
+println("# Threads = ", Base.Threads.nthreads())
 
-println("Julia Nlist")
-@btime CellList(X, cutoff, C, perbc, neig_guess = 28, sorted = false)
-println("Matscipy Nlist")
-@btime matscipy_nlist(at, cutoff)
+for L in [4, 10, 30]
+   print("L = $L")
+   # si, non-cubic cell, mixed bc
+   at = bulk(:Si, cubic=true) * L
+   println(", N = $(length(at))")
+   set_pbc!(at, (true, false, true))
+   C = JMat(cell(at))
+   X = positions(at)
+   perbc = JVec(pbc(at))
+   cutoff = 2.1 * rnn(:Si)
 
-
-print("L = 10")
-# si, non-cubic cell, mixed bc
-at = bulk(:Si, cubic=true) * 10
-println(", N = $(length(at))")
-set_pbc!(at, (true, false, true))
-C = JMat(cell(at))
-X = positions(at)
-perbc = JVec(pbc(at))
-cutoff = 2.1 * rnn(:Si)
-
-println("Julia Nlist")
-@btime CellList(X, cutoff, C, perbc, neig_guess = 28, sorted = false)
-println("Matscipy Nlist")
-@btime matscipy_nlist(at, cutoff)
-
-
-print("L = 30")
-# si, non-cubic cell, mixed bc
-at = bulk(:Si, cubic=true) * 30
-println(", N = $(length(at))")
-set_pbc!(at, (true, false, true))
-C = JMat(cell(at))
-X = positions(at)
-perbc = JVec(pbc(at))
-cutoff = 2.1 * rnn(:Si)
-
-println("Julia Nlist")
-@btime CellList(X, cutoff, C, perbc, neig_guess = 28, sorted = false)
-println("Matscipy Nlist")
-@btime matscipy_nlist(at, cutoff)
+   println("Julia Nlist")
+   @btime PairList($X, $cutoff, $C, $perbc, sorted = false)
+   println("Matscipy Nlist")
+   @btime matscipy_nlist($(ASEAtoms(at)), $cutoff)
+   println("------------------------------------------")
+end

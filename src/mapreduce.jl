@@ -1,4 +1,6 @@
 
+using Base.Threads
+
 import Base.map!
 
 export mapreduce!, mapreduce_sym!, mapreduce_antisym!, map_d!,
@@ -37,6 +39,28 @@ function mapreduce_sym!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})
    end
    return out
 end
+
+"""
+`tmapreduce_sym!`
+
+like `mapreduce_sym!` but multi-threaded
+"""
+function tmapreduce_sym!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})
+   nlist = it.nlist
+   nperthread = npairs(nlist) ÷ nthreads()
+   nn = [1:nperthread:npairs(nlist); npairs(nlist)+1]
+   @threads for it = 1:nthreads()
+      for n = nn[it]:(nn[it+1]-1)
+         if  nlist.i[n] < nlist.j[n]    # NB this probably prevents simd
+            f_ = f(nlist.r[n], nlist.R[n])
+            out[nlist.i[n]] += f_
+            out[nlist.j[n]] += f_
+         end
+      end
+   end
+   return out
+end
+
 
 
 """

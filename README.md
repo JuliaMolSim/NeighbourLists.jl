@@ -7,26 +7,29 @@
 [![codecov.io](http://codecov.io/github/libAtoms/NeighbourLists.jl/coverage.svg?branch=master)](http://codecov.io/github/libAtoms/NeighbourLists.jl?branch=master)
 
 
-A Julia port of the neighbourlist implemented in
+A Julia port and restructuring of the neighbourlist implemented in
 [matscipy](https://github.com/libAtoms/matscipy) (with the authors' permission).
-The Julia version is faster than matscipy for small systems, probably due  to
-the overhead of dealing with Python, but on large systems it is tends to be
-slower (up to around a factor 2 for 100,000 atoms).
+Single-threaded, the Julia version is faster than matscipy for small systems,
+probably due  to the overhead of dealing with Python, but on large systems it is
+tends to be slower (up to around a factor 2 for 100,000 atoms). However, the
+Julia version is also multi-threaded, which makes up for that (but otherwise
+scales poorly).
 
-The package is intended to be used with [JuLIP.jl](https://github.com/libAtoms/JuLIP.jl),
-but can be used as stand-alone.
+The package is intended to be used with
+[JuLIP.jl](https://github.com/libAtoms/JuLIP.jl), but can be used as
+stand-alone.
 
 ## Getting Started
 
 ```Julia
 Pkg.add("NeighbourLists")
 using NeighbourLists
-?CellList
+?PairList
 ```
 
 ## TODO
 
 * fix the performance problem, it should be possible to be closer to C
-* 2D
+* 2D (structure in place, just needs a little time investment and testing)
 * finish the iterators
-* multi-threading for neighbourlist construction and for iterators
+* fix multi-threading; the current version scales terribly
