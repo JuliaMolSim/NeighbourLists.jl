@@ -1,5 +1,6 @@
+using Base.Threads
 
-
+export npairs, nsites
 
 PairList{T}(X::Vector{SVec{T}}, cutoff::AbstractFloat, cell::AbstractMatrix, pbc;
             int_type::Type = Int, store_first = true, sorted = true) =
@@ -57,6 +58,8 @@ lengths{T}(C::SMat{T}) =
    det(C) ./ SVec{T}(norm(C[2,:]×C[3,:]), norm(C[3,:]×C[1,:]), norm(C[1,:]×C[2,:]))
 
 
+# --------------------------------------------------------------------------
+
 function analyze_cell(cell, cutoff, _::TI) where TI
    # check the cell volume (allow only 3D volumes!)
    volume = det(cell)
@@ -70,6 +73,13 @@ function analyze_cell(cell, cutoff, _::TI) where TI
    return inv_cell, ns_vec, lens
 end
 
+# multi-threading setup
+
+function setup_mt(niter::TI) where TI
+   nt = min(4, ceil(TI, niter / 20))
+   nn = ceil.(TI, linspace(1, niter+1, nt+1))
+   return nt, nn
+end
 
 # ==================== CellList Core  ================
 
@@ -94,6 +104,7 @@ function _celllist_(X::Vector{SVec{T}}, cell::SMat{T}, pbc::SVec{Bool},
    seed = fill(TI(-1), ncells)
    last = Vector{TI}(ncells)
    next = Vector{TI}(nat)
+   nats = zeros(TI, ncells)
 
    for i = 1:nat
       # Get cell index
@@ -104,18 +115,20 @@ function _celllist_(X::Vector{SVec{T}}, cell::SMat{T}, pbc::SVec{Bool},
       ci = sub2ind(ns, c)   # <<<<
 
       # Put atom into appropriate bin (list of linked lists)
-      if seed[ci] < 0
-         next[i] = -1;
-         seed[ci] = i;
-         last[ci] = i;
+      if seed[ci] < 0   #  ci contains no atom yet
+         next[i] = -1
+         seed[ci] = i
+         last[ci] = i
+         nats[ci] += 1
       else
-         next[i] = -1;
-         next[last[ci]] = i;
-         last[ci] = i;
+         next[i] = -1
+         next[last[ci]] = i
+         last[ci] = i
+         nats[ci] += 1
       end
    end
 
-   return CellList(X, cell, inv_cell, pbc, cutoff, seed, last, next)
+   return CellList(X, cell, inv_cell, pbc, cutoff, seed, last, next, nats)
 end
 
 
@@ -127,16 +140,27 @@ function _pairlist_(clist::CellList{T, TI}) where {T, TI}
    nat = length(X)
    inv_cell, ns_vec, lens = analyze_cell(cell, cutoff, one(TI))
 
-   # allocate neighbourlist information (can make a better guess?)
-   szhint = nat*12    # Initial guess for neighbour list size
-   first   = Vector{TI}();       sizehint!(first, szhint)   # i
-   secnd   = Vector{TI}();       sizehint!(secnd, szhint)   # j -> (i,j) is a bond
-   absdist = Vector{T}();        sizehint!(absdist, szhint) # r_ij
-   distvec = Vector{SVec{T}}();  sizehint!(distvec, szhint) # Xj - Xi
+   # guess how many neighbours per atom
+   #    atoms in cell x (8 cells) * (ball / cube)
+   max_nat_cell = maximum(clist.nats)
+   nneigs_guess = ceil(TI, 1.5 * max_nat_cell * (π^2/4))
 
-   # funnily testing with cutoff^2 actually makes a measurable difference
-   # which suggests we are pretty close to the performance limit
-   cutoff_sq = cutoff^2
+   # allocate arrays for the many threads
+   # set number of threads
+   nt, nn = setup_mt(nat)
+   # allocate arrays
+   first_t = Vector{TI}[ Vector{TI}()  for n = 1:nt ]    # i
+   secnd_t = Vector{TI}[ Vector{TI}()  for n = 1:nt ]    # j
+   absdist_t = Vector{T}[ Vector{T}()  for n = 1:nt ]  # r_ij ~ norm(X[i]-X[j])
+   distvec_t = Vector{SVec{T}}[ Vector{SVec{T}}()  for n = 1:nt ]  # ~ X[i] - X[j]
+   # give size hints
+   sz = (nat ÷ nt + nt) * nneigs_guess
+   for n = 1:nt
+      sizehint!(first_t[n], sz)
+      sizehint!(secnd_t[n], sz)
+      sizehint!(absdist_t[n], sz)
+      sizehint!(distvec_t[n], sz)
+   end
 
    # We need the shape of the bin ( bins[:, i] = cell[i,:] / ns[i] )
    bins = cell' ./ ns_vec
@@ -146,71 +170,102 @@ function _pairlist_(clist::CellList{T, TI}) where {T, TI}
    cxyz = CartesianIndex(nxyz.data)
    xyz_range = CartesianRange(- cxyz, cxyz)
 
-   # Loop over atoms
-   for i = 1:nat
-      # current atom position
-      xi = X[i]
-      # cell index (cartesian) of xi
-      ci0 = position_to_cell_index(inv_cell, xi, ns_vec)
+   # Loop over threads
+   for it = 1:nt
+      for i = nn[it]:(nn[it+1]-1)
+         # current atom position
+         _find_neighbours_!(i, clist, ns_vec, bins, xyz_range,
+                     first_t[it], secnd_t[it], absdist_t[it], distvec_t[it])
+      end # for i = 1:nat
+   end # @threads
 
-      # Truncate if non-periodic and outside of simulation domain
-      # (here, we don't yet want to wrap the pbc as well)
-      ci = bin_trunc.(ci0, pbc, ns_vec)
-      # dxi is the position relative to the lower left corner of the bin
-      dxi = xi - bins * (ci - 1)
-
-      # Apply periodic boundary conditions as well now
-      ci = bin_wrap_or_trunc.(ci0, pbc, ns_vec)
-
-      for ixyz in xyz_range
-         # convert cartesian index to SVector
-         xyz = SVec{TI}(ixyz.I)
-         # get the bin index
-         cj = bin_wrap.(ci + xyz, pbc, ns_vec)
-         # skip this bin if not inside the domain
-         all(1 .<= cj .<= ns_vec) || continue
-         # linear cell index
-         ncj = sub2ind(ns_vec.data, cj)
-         # Offset of the neighboring bins
-         off = bins * xyz
-
-         # Loop over all atoms in neighbouring bin (all potential
-         # neighbours in the bin with linear index cj1)
-         j = seed[ncj] # the first atom in the ncj cell
-         while j > 0
-            if i != j || any(xyz .!= 0)
-               xj = X[j] # position of current neighbour
-
-               # we need to find the cell index again, because this is
-               # not really the cell index, but it could be outside
-               # the domain -> i.e. this only makes a difference for pbc
-               cj = position_to_cell_index(inv_cell, xj, ns_vec)
-               cj = bin_trunc.(cj, pbc, ns_vec)
-
-               # drj is position relative to lower left corner of the bin
-               dxj = xj - bins * (cj - 1)
-               # Compute distance between atoms
-               dx = dxj - dxi + off
-               norm_dx_sq = dx ⋅ dx
-
-               # append to the list
-               if norm_dx_sq < cutoff_sq
-                  push!(first, i)
-                  push!(secnd, j)
-                  push!(distvec, dx)
-                  push!(absdist, sqrt(norm_dx_sq))
-               end
-            end  # if i != j || any(xyz .!= 0)
-
-            # go to the next atom in the current cell
-            j = next[j];
-         end # while j > 0 (loop over atoms in current cell)
-      end # loop over neighbouring bins
-   end # for i = 1:nat
+   # piece them back together
+   sz = sum( length(first_t[i]) for i = 1:nt )
+   first = first_t[1];     sizehint!(first, sz)
+   secnd = secnd_t[1];     sizehint!(secnd, sz)
+   absdist = absdist_t[1]; sizehint!(absdist, sz)
+   distvec = distvec_t[1]; sizehint!(distvec, sz)
+   for it = 2:nt
+      append!(first, first_t[it])
+      append!(secnd, secnd_t[it])
+      append!(absdist, absdist_t[it])
+      append!(distvec, distvec_t[it])
+   end
 
    # Build return tuple
    return first, secnd, absdist, distvec
 end
+
+
+
+function _find_neighbours_!(i, clist, ns_vec::SVec{TI}, bins, xyz_range,
+                            first, secnd, absdist, distvec) where TI
+   inv_cell, X, pbc = clist.inv_cell, clist.X, clist.pbc
+   seed, last, next = clist.seed, clist.last, clist.next
+   xi = X[i]
+
+   # funnily testing with cutoff^2 actually makes a measurable difference
+   # which suggests we are pretty close to the performance limit
+   cutoff_sq = clist.cutoff^2
+
+   # cell index (cartesian) of xi
+   ci0 = position_to_cell_index(inv_cell, xi, ns_vec)
+
+   # Truncate if non-periodic and outside of simulation domain
+   # (here, we don't yet want to wrap the pbc as well)
+   ci = bin_trunc.(ci0, pbc, ns_vec)
+   # dxi is the position relative to the lower left corner of the bin
+   dxi = xi - bins * (ci - 1)
+
+   # Apply periodic boundary conditions as well now
+   ci = bin_wrap_or_trunc.(ci0, pbc, ns_vec)
+
+   for ixyz in xyz_range
+      # convert cartesian index to SVector
+      xyz = SVec{TI}(ixyz.I)
+      # get the bin index
+      cj = bin_wrap.(ci + xyz, pbc, ns_vec)
+      # skip this bin if not inside the domain
+      all(1 .<= cj .<= ns_vec) || continue
+      # linear cell index
+      ncj = sub2ind(ns_vec.data, cj)
+      # Offset of the neighboring bins
+      off = bins * xyz
+
+      # Loop over all atoms in neighbouring bin (all potential
+      # neighbours in the bin with linear index cj1)
+      j = seed[ncj] # the first atom in the ncj cell
+      while j > 0
+         if i != j || any(xyz .!= 0)
+            xj = X[j] # position of current neighbour
+
+            # we need to find the cell index again, because this is
+            # not really the cell index, but it could be outside
+            # the domain -> i.e. this only makes a difference for pbc
+            cj = position_to_cell_index(inv_cell, xj, ns_vec)
+            cj = bin_trunc.(cj, pbc, ns_vec)
+
+            # drj is position relative to lower left corner of the bin
+            dxj = xj - bins * (cj - 1)
+            # Compute distance between atoms
+            dx = dxj - dxi + off
+            norm_dx_sq = dx ⋅ dx
+
+            # append to the list
+            if norm_dx_sq < cutoff_sq
+               push!(first, i)
+               push!(secnd, j)
+               push!(distvec, dx)
+               push!(absdist, sqrt(norm_dx_sq))
+            end
+         end  # if i != j || any(xyz .!= 0)
+
+         # go to the next atom in the current cell
+         j = next[j];
+      end # while j > 0 (loop over atoms in current cell)
+   end # loop over neighbouring bins
+end
+
 
 function _pairlist_(X::Vector{SVec{T}}, cell::SMat{T}, pbc::SVec{Bool},
             cutoff::T, _i::TI, store_first::Bool, sorted::Bool) where {T, TI}
@@ -233,7 +288,7 @@ end
 
 
 
-# ==================== Bonus Stuff =========================
+# ==================== Post-Processing =========================
 
 """
 `get_first(i::Vector{TI}, nat::Integer) -> first::Vector{TI}
@@ -273,14 +328,18 @@ sorts each sub-range of `j` corresponding to one site  in ascending order
 and applies the same permutation to `r, R, S`.
 """
 function sort_neigs!(j, r, R, first)
-   for n = 1:length(first)-1
-      if first[n+1] > first[n] + 1
-         rg = first[n]:first[n+1]-1
-         I = sortperm(@view j[rg])
-         rg_perm = rg[I]
-         j[rg] = j[rg_perm]
-         r[rg] = r[rg_perm]
-         R[rg] = R[rg_perm]
+   nat = length(first) - 1
+   nt, nn = setup_mt(nat)
+   @threads for it = 1:nt
+      for n = nn[it]:(nn[it+1]-1)
+         if first[n+1] > first[n] + 1
+            rg = first[n]:first[n+1]-1
+            I = sortperm(j[rg])
+            rg_perm = rg[I]
+            j[rg] = j[rg_perm]
+            r[rg] = r[rg_perm]
+            R[rg] = R[rg_perm]
+         end
       end
    end
 end

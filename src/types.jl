@@ -4,7 +4,7 @@ using StaticArrays
 const SVec{T} = SVector{3, T}
 const SMat{T} = SMatrix{3, 3, T, 9}
 
-
+export PairList
 
 
 """
@@ -61,4 +61,5 @@ struct CellList{T <: AbstractFloat, TI <: Integer}
    seed::Vector{TI}
    last::Vector{TI}
    next::Vector{TI}
+   nats::Vector{TI} 
 end

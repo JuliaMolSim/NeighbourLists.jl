@@ -4,7 +4,7 @@ using Base.Test
 # ---- FLAGS -----
 
 # whether to run performance tests
-performance = false
+performance = true
 
 # check whether on CI
 isCI = haskey(ENV, "CI")

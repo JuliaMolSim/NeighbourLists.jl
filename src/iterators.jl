@@ -37,6 +37,3 @@ start{T,TI}(it::SiteIterator{T,TI}) = one(TI)
 done(it::SiteIterator, i::Integer) = (i > nsites(it.nlist))
 next(it::SiteIterator, i::Integer) = (i, site(it.nlist, i)...), inc(i)
 length(it::SiteIterator) = nsites(it.nlist)
-
-
-# -------------- iterator over n-body ---------------

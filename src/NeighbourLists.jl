@@ -2,7 +2,6 @@
 __precompile__()
 module NeighbourLists
 
-export PairList, npairs, nsites
 
 include("types.jl")
 
