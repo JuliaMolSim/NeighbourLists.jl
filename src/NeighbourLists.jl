@@ -2,13 +2,9 @@
 __precompile__()
 module NeighbourLists
 
-using StaticArrays
+export PairList, npairs, nsites
 
-const SVec{T} = SVector{3, T}
-const SMat{T} = SMatrix{3, 3, T, 9}
-
-export CellList, npairs, nsites
-
+include("types.jl")
 
 # this contains the cell-list data structures and assembly
 include("cell_list.jl")
@@ -17,7 +13,7 @@ include("cell_list.jl")
 include("iterators.jl")
 
 # alternative assembly protocol more akin to mapreduce
-include("mapreduce.jl")
+# include("mapreduce.jl")
 
 
 end # module

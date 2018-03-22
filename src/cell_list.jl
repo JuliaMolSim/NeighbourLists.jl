@@ -1,75 +1,16 @@
 
-# ================= types and wrapper stuff ======================
 
-"""
-`CellList` stores a neighbourlist that is constructed from a cell-list
-(it isn't actually stored as a cell-list).
-Typically, this is constructed using
-```
-CellList(X, cutoff, cell, pbc)
-```
-where
 
-* `X` : positions, either as 3 x N matrix or as `Vector{SVec}`
-* `cutoff` : positive real value
-* `cell` : 3 x 3 matrix, with rows denoting the cell vectors
-* `pbc` : 3-tuple or array, storing periodicity information
+PairList{T}(X::Vector{SVec{T}}, cutoff::AbstractFloat, cell::AbstractMatrix, pbc;
+            int_type::Type = Int, store_first = true, sorted = true) =
+   _pairlist_(X, SMat{T}(cell), SVec{Bool}(pbc), T(cutoff), zero(int_type),
+              store_first, sorted)
 
-### Kw-args:
+PairList{T}(X::Matrix{T}, args...; kwargs...) =
+   PairList(reinterpret(SVec{T}, X, (size(X,2),)), args...; varargs...)
 
-* `int_type` : default is `Int`
-* `store_first` : whether to store the array of first indices, default `true`
-* `sorted` : whether to sort the `j` vector, default `false`
-
-### CellList fields
-
-`i, j, r, R, first`, where
-
-`(i[n], j[n])` denotes the indices of a neighbour pair, `r[n]` the distance
-between those atoms, `R[n]` the vectorial distance, note this is identical to
-`X[i[n]]-X[j[n]]` without periodic b.c.s, but with periodic boundary conditions
-it is different. `first[m]` contains the index to the first `(i[n], j[n])` for
-which `i[n] == first[m]`, i.e., `(j, first)` essentially defines a compressed
-columns storage of the adjacancy matrix.
-"""
-struct CellList{T <: AbstractFloat, TI <: Integer}
-   X::Vector{SVec{T}}
-   cutoff::T
-   i::Vector{TI}
-   j::Vector{TI}
-   r::Vector{T}
-   R::Vector{SVec{T}}
-   S::Vector{SVec{TI}}
-   first::Vector{TI}
-end
-
-# TODO: consider redefining the cell in terms of the
-#       extent of X
-
-function CellList{T}(X::Vector{SVec{T}}, cutoff::AbstractFloat,
-                     cell::AbstractMatrix, pbc;
-                     int_type::Type = Int, store_first = true,
-                     sorted = false, neig_guess = 12)
-   i, j, r, R, S = _neighbour_list_(SMat{T}(cell...), SVec{Bool}(pbc...), X,
-                                    cutoff, zero(int_type), neig_guess)
-   if store_first
-      first = get_first(i, length(X))
-   else
-      first = zeros(int_type, 0)
-   end
-
-   if store_first && sorted
-      sort_neigs!(j, r, R, S, first)
-   end
-
-   return CellList(X, cutoff, i, j, r, R, S, first)
-end
-
-CellList{T}(X::Matrix{T}, args...; kwargs...) =
-      CellList(reinterpret(SVec{T}, X, (size(X,2),)), args...; varargs...)
-
-npairs(nlist::CellList) = length(nlist.i)
-nsites(nlist::CellList) = length(nlist.first) - 1
+npairs(nlist::PairList) = length(nlist.i)
+nsites(nlist::PairList) = length(nlist.first) - 1
 
 
 # ====================== Cell Index Algebra =====================
@@ -116,13 +57,40 @@ lengths{T}(C::SMat{T}) =
    det(C) ./ SVec{T}(norm(C[2,:]×C[3,:]), norm(C[3,:]×C[1,:]), norm(C[1,:]×C[2,:]))
 
 
+function analyze_cell(cell, cutoff, _::TI) where TI
+   # check the cell volume (allow only 3D volumes!)
+   volume = det(cell)
+   @assert volume > 1e-12
+   # precompute inverse of cell matrix for coordiate transformation
+   inv_cell = inv(cell)
+   # Compute distance of cell faces
+   lens = lengths(cell)
+   # Number of cells for cell subdivision
+   ns_vec = max.(floor.(TI, lens / cutoff), 1)
+   return inv_cell, ns_vec, lens
+end
+
 
 # ==================== CellList Core  ================
 
-function _sort_into_cells_(X, pbc, inv_cell, ns_vec::SVec{TI}, ns) where TI
+
+function _celllist_(X::Vector{SVec{T}}, cell::SMat{T}, pbc::SVec{Bool},
+            cutoff::T, _i::TI) where {T <: AbstractFloat, TI <: Integer}
+
+   # ----- analyze cell -----
    nat = length(X)
-   ncells = prod(ns_vec)
+   inv_cell, ns_vec, lens = analyze_cell(cell, cutoff, _i)
+   ns = ns_vec.data
+
+   if prod(BigInt.(ns_vec)) > typemax(TI)
+      error("""Ratio of simulation cell size to cutoff is very large.
+               Are you using a cell with lots of vacuum? To fix this
+               use a larger integer type (e.g. Int128), a
+               larger cut-off, or a smaller simulation cell.""")
+   end
+
    # data structure to store a linked list for each bin
+   ncells = prod(ns_vec)
    seed = fill(TI(-1), ncells)
    last = Vector{TI}(ncells)
    next = Vector{TI}(nat)
@@ -134,11 +102,8 @@ function _sort_into_cells_(X, pbc, inv_cell, ns_vec::SVec{TI}, ns) where TI
       c = bin_wrap_or_trunc.(c, pbc, ns_vec)
       # linear cell index  # (+1 due to 1-based indexing)
       ci = sub2ind(ns, c)   # <<<<
-      # sanity check
-      # @assert all(1 .<= c .<= ns_vec)
-      # @assert 1 <= ci <= ncells
 
-      # Put atom into appropriate bin (linked list)
+      # Put atom into appropriate bin (list of linked lists)
       if seed[ci] < 0
          next[i] = -1;
          seed[ci] = i;
@@ -150,60 +115,24 @@ function _sort_into_cells_(X, pbc, inv_cell, ns_vec::SVec{TI}, ns) where TI
       end
    end
 
-   return seed, last, next
+   return CellList(X, cell, inv_cell, pbc, cutoff, seed, last, next)
 end
 
 
-"""
-_neighbour_list_(cell, pbc, X, cutoff, _): inner neighbourlist assembly
+function _pairlist_(clist::CellList{T, TI}) where {T, TI}
 
-*   `cell::SMatrix{D, D, T}`: rows are the cell vectors
-*    `pbc::SVector{3, Bool}`: flags for periodic bcs
-*      `X::Vector{SVec{T}}` : positions
-* `cutoff::T`               : cutoff radius
-* `     _::TI`              : a number specifying the integer type to be used
-"""
-function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{T}},
-                           cutoff::T, ::TI, neigs_guess::Integer = 12)
-
-   # ----------- analyze cell --------------
+   X, cell, pbc, cutoff, seed, last, next =
+         clist.X, clist.cell, clist.pbc, clist.cutoff,
+         clist.seed, clist.last, clist.next
    nat = length(X)
-   # check the cell volume (allow only 3D volumes!)
-   volume = det(cell)
-   if volume < 1e-12
-      error("(near) Zero cell volume.")
-   end
-   # precompute inverse of cell matrix for coordiate transformation
-   inv_cell = inv(cell)
-   # Compute distance of cell faces
-   lens = lengths(cell)
-   # Number of cells for cell subdivision
-   ns_vec = max.(floor.(TI, lens / cutoff), 1)
-   ns = ns_vec.data   # a tuple
+   inv_cell, ns_vec, lens = analyze_cell(cell, cutoff, one(TI))
 
-   if prod(BigInt.(ns_vec)) > typemax(TI)
-      error("""Ratio of simulation cell size to cutoff is very large.
-               Are you using a cell with lots of vacuum? To fix this
-               use a larger integer type (e.g. Int128), a
-               larger cut-off, or a smaller simulation cell.""")
-   end
-
-   # Find out over how many neighbor cells we need to loop (if the box is small)
-   nxyz = ceil.(TI, cutoff * (ns_vec ./ lens))
-   cxyz = CartesianIndex(nxyz.data)
-   xyz_range = CartesianRange(- cxyz, cxyz)
-
-   # ------------ Sort particles into bins -----------------
-   seed, last, next = _sort_into_cells_(X, pbc, inv_cell, ns_vec, ns)
-
-   # ------------ Start actual neighbourlist assembly ----------
    # allocate neighbourlist information (can make a better guess?)
    szhint = nat*12    # Initial guess for neighbour list size
    first   = Vector{TI}();       sizehint!(first, szhint)   # i
    secnd   = Vector{TI}();       sizehint!(secnd, szhint)   # j -> (i,j) is a bond
-   absdist = Vector{T}();        sizehint!(absdist, szhint) # Xj - Xi
-   distvec = Vector{SVec{T}}();  sizehint!(distvec, szhint) # r_ij
-   shift   = Vector{SVec{TI}}(); sizehint!(shift, szhint)   # cell shifts
+   absdist = Vector{T}();        sizehint!(absdist, szhint) # r_ij
+   distvec = Vector{SVec{T}}();  sizehint!(distvec, szhint) # Xj - Xi
 
    # funnily testing with cutoff^2 actually makes a measurable difference
    # which suggests we are pretty close to the performance limit
@@ -211,6 +140,11 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
 
    # We need the shape of the bin ( bins[:, i] = cell[i,:] / ns[i] )
    bins = cell' ./ ns_vec
+
+   # Find out over how many neighbor cells we need to loop (if the box is small)
+   nxyz = ceil.(TI, cutoff * (ns_vec ./ lens))
+   cxyz = CartesianIndex(nxyz.data)
+   xyz_range = CartesianRange(- cxyz, cxyz)
 
    # Loop over atoms
    for i = 1:nat
@@ -236,7 +170,7 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
          # skip this bin if not inside the domain
          all(1 .<= cj .<= ns_vec) || continue
          # linear cell index
-         ncj = sub2ind(ns, cj)    # <<<<<<<<
+         ncj = sub2ind(ns_vec.data, cj)
          # Offset of the neighboring bins
          off = bins * xyz
 
@@ -265,7 +199,6 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
                   push!(secnd, j)
                   push!(distvec, dx)
                   push!(absdist, sqrt(norm_dx_sq))
-                  # push!(shift, (ci0 - cj + xyz) .÷ ns_vec)
                end
             end  # if i != j || any(xyz .!= 0)
 
@@ -276,7 +209,26 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
    end # for i = 1:nat
 
    # Build return tuple
-   return first, secnd, absdist, distvec, shift
+   return first, secnd, absdist, distvec
+end
+
+function _pairlist_(X::Vector{SVec{T}}, cell::SMat{T}, pbc::SVec{Bool},
+            cutoff::T, _i::TI, store_first::Bool, sorted::Bool) where {T, TI}
+
+   clist = _celllist_(X, cell, pbc, cutoff, _i)
+   i, j, r, R = _pairlist_(clist)
+
+   if store_first
+      first = get_first(i, length(X))
+   else
+      first = zeros(int_type, 0)
+   end
+
+   if store_first && sorted
+      sort_neigs!(j, r, R, first)
+   end
+
+   return PairList(X, cutoff, i, j, r, R, first)
 end
 
 
@@ -320,7 +272,7 @@ end
 sorts each sub-range of `j` corresponding to one site  in ascending order
 and applies the same permutation to `r, R, S`.
 """
-function sort_neigs!(j, r, R, S, first)
+function sort_neigs!(j, r, R, first)
    for n = 1:length(first)-1
       if first[n+1] > first[n] + 1
          rg = first[n]:first[n+1]-1
@@ -329,7 +281,6 @@ function sort_neigs!(j, r, R, S, first)
          j[rg] = j[rg_perm]
          r[rg] = r[rg_perm]
          R[rg] = R[rg_perm]
-         # S[rg] = S[rg_perm]
       end
    end
 end

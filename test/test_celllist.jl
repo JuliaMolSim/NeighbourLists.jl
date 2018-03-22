@@ -14,13 +14,13 @@ for N in Ns
    cutoff = 2.0
 
    # compute a cell list
-   nlist = CellList(X, cutoff, C, pbc; sorted = true)
+   nlist = PairList(X, cutoff, C, pbc; sorted = true)
 
    # compute a NearestNeighbors list
    i, j, r, R = nn_list(X, cutoff, C, pbc)
    R = X[j] - X[i]
    first = NeighbourLists.get_first(i, length(X))
-   NeighbourLists.sort_neigs!(j, r, R, [], first)
+   NeighbourLists.sort_neigs!(j, r, R, first)
 
    # check the two lists are identical
    @test (i == nlist.i) && (j == nlist.j)
