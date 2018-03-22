@@ -119,46 +119,7 @@ lengths{T}(C::SMat{T}) =
 
 # ==================== CellList Core  ================
 
-
-"""
-_neighbour_list_(cell, pbc, X, cutoff, _): inner neighbourlist assembly
-
-*   `cell::SMatrix{D, D, T}`: rows are the cell vectors
-*    `pbc::SVector{3, Bool}`: flags for periodic bcs
-*      `X::Vector{SVec{T}}` : positions
-* `cutoff::T`               : cutoff radius
-* `     _::TI`              : a number specifying the integer type to be used
-"""
-function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{T}},
-                           cutoff::T, ::TI, neigs_guess::Integer = 12)
-
-   # ----------- analyze cell --------------
-   # check the cell volume (allow only 3D volumes!)
-   volume = det(cell)
-   if volume < 1e-12
-      error("(near) Zero cell volume.")
-   end
-   # precompute inverse of cell matrix for coordiate transformation
-   inv_cell = inv(cell)
-   # Compute distance of cell faces
-   lens = lengths(cell)
-   # Number of cells for cell subdivision
-   ns_vec = max.(floor.(TI, lens / cutoff), 1)
-   ns = ns_vec.data   # a tuple
-
-   if prod(BigInt.(ns_vec)) > typemax(TI)
-      error("""Ratio of simulation cell size to cutoff is very large.
-               Are you using a cell with lots of vacuum? To fix this
-               use a larger integer type (e.g. Int128), a
-               larger cut-off, or a smaller simulation cell.""")
-   end
-
-   # Find out over how many neighbor cells we need to loop (if the box is small)
-   nxyz = ceil.(TI, cutoff * (ns_vec ./ lens))
-   cxyz = CartesianIndex(nxyz.data)
-   xyz_range = CartesianRange(- cxyz, cxyz)
-
-   # ------------ Sort particles into bins -----------------
+function _sort_into_cells_(X, pbc, inv_cell, ns_vec::SVec{TI}, ns) where TI
    nat = length(X)
    ncells = prod(ns_vec)
    # data structure to store a linked list for each bin
@@ -188,6 +149,52 @@ function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{
          last[ci] = i;
       end
    end
+
+   return seed, last, next
+end
+
+
+"""
+_neighbour_list_(cell, pbc, X, cutoff, _): inner neighbourlist assembly
+
+*   `cell::SMatrix{D, D, T}`: rows are the cell vectors
+*    `pbc::SVector{3, Bool}`: flags for periodic bcs
+*      `X::Vector{SVec{T}}` : positions
+* `cutoff::T`               : cutoff radius
+* `     _::TI`              : a number specifying the integer type to be used
+"""
+function _neighbour_list_{T, TI}(cell::SMat{T}, pbc::SVec{Bool}, X::Vector{SVec{T}},
+                           cutoff::T, ::TI, neigs_guess::Integer = 12)
+
+   # ----------- analyze cell --------------
+   nat = length(X)
+   # check the cell volume (allow only 3D volumes!)
+   volume = det(cell)
+   if volume < 1e-12
+      error("(near) Zero cell volume.")
+   end
+   # precompute inverse of cell matrix for coordiate transformation
+   inv_cell = inv(cell)
+   # Compute distance of cell faces
+   lens = lengths(cell)
+   # Number of cells for cell subdivision
+   ns_vec = max.(floor.(TI, lens / cutoff), 1)
+   ns = ns_vec.data   # a tuple
+
+   if prod(BigInt.(ns_vec)) > typemax(TI)
+      error("""Ratio of simulation cell size to cutoff is very large.
+               Are you using a cell with lots of vacuum? To fix this
+               use a larger integer type (e.g. Int128), a
+               larger cut-off, or a smaller simulation cell.""")
+   end
+
+   # Find out over how many neighbor cells we need to loop (if the box is small)
+   nxyz = ceil.(TI, cutoff * (ns_vec ./ lens))
+   cxyz = CartesianIndex(nxyz.data)
+   xyz_range = CartesianRange(- cxyz, cxyz)
+
+   # ------------ Sort particles into bins -----------------
+   seed, last, next = _sort_into_cells_(X, pbc, inv_cell, ns_vec, ns)
 
    # ------------ Start actual neighbourlist assembly ----------
    # allocate neighbourlist information (can make a better guess?)

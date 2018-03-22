@@ -5,7 +5,7 @@ using Base.Test
 if hasjulip
 
    # this is kind of meaningless, we need to switch this test to compare
-   # against ASE 
+   # against ASE
    function test_nlist_julip(at, cutoff)
       cl = CellList(positions(at), cutoff, cell(at), pbc(at))
       nlist = neighbourlist(at, cutoff)

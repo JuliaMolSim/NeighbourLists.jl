@@ -11,12 +11,12 @@ isCI = haskey(ENV, "CI")
 notCI = !isCI
 
 # TODO: switch the JuLIP test to an ASE test
-# # check whether we have JuLIP
-# hasjulip = false
+# check whether we have JuLIP
+hasjulip = true
 # try
 #    using JuLIP
 # catch
-#    hasjulip = true
+#    hasjulip = false
 # end
 
 # ----------------- TESTS -------------------
@@ -25,9 +25,9 @@ notCI = !isCI
 
    @testset "CellList" begin include("test_celllist.jl") end
 
-   # if hasjulip
-   #    @testset "JuLIP" begin include("test_julip.jl") end
-   # end
+   if hasjulip
+      @testset "JuLIP" begin include("test_julip.jl") end
+   end
 
 end
 
