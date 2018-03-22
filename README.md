@@ -12,7 +12,8 @@ A Julia port and restructuring of the neighbourlist implemented in
 Single-threaded, the Julia version is faster than matscipy for small systems,
 probably due  to the overhead of dealing with Python, but on large systems it is
 tends to be slower (up to around a factor 2 for 100,000 atoms). However, the
-Julia version is also multi-threaded with reasonably good scaling.
+Julia version is also multi-threaded, which makes up for that (but otherwise
+scales poorly).
 
 The package is intended to be used with
 [JuLIP.jl](https://github.com/libAtoms/JuLIP.jl), but can be used as
@@ -31,3 +32,4 @@ using NeighbourLists
 * fix the performance problem, it should be possible to be closer to C
 * 2D (structure in place, just needs a little time investment and testing)
 * finish the iterators
+* fix multi-threading; the current version scales terribly

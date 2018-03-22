@@ -76,7 +76,7 @@ end
 # multi-threading setup
 
 function setup_mt(niter::TI) where TI
-   nt = min(4, ceil(TI, niter / 20))
+   nt = minimum([6, nthreads(), ceil(TI, niter / 20)])
    nn = ceil.(TI, linspace(1, niter+1, nt+1))
    return nt, nn
 end
@@ -171,7 +171,7 @@ function _pairlist_(clist::CellList{T, TI}) where {T, TI}
    xyz_range = CartesianRange(- cxyz, cxyz)
 
    # Loop over threads
-   for it = 1:nt
+   @threads for it = 1:nt
       for i = nn[it]:(nn[it+1]-1)
          # current atom position
          _find_neighbours_!(i, clist, ns_vec, bins, xyz_range,

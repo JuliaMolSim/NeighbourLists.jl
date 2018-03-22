@@ -32,19 +32,3 @@ for L in [4, 10, 30]
    @btime matscipy_nlist($(ASEAtoms(at)), $cutoff)
    println("------------------------------------------")
 end
-
-using NeighbourLists
-using JuLIP
-using BenchmarkTools
-
-L = 30
-print("L = $L")
-# si, non-cubic cell, mixed bc
-at = bulk(:Si, cubic=true) * L
-println(", N = $(length(at))")
-set_pbc!(at, (true, false, true))
-C = JMat(cell(at))
-X = positions(at)
-perbc = JVec(pbc(at))
-cutoff = 2.1 * rnn(:Si)
-nlist = PairList(X, cutoff, C, perbc, sorted = true);
