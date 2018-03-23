@@ -2,7 +2,7 @@
 
 using NeighbourLists
 using JuLIP
-
+using Base.Threads
 
 # at = set_pbc!(bulk(:Si, cubic=true) * 3, true)
 # length(at)
@@ -17,6 +17,12 @@ using JuLIP
 # @time mapreduce_sym!(out, f, pairs(nlist));
 # @time NeighbourLists.tmapreduce_sym!(out, f, pairs(nlist));
 
+
+
+struct NBodyIterator{N, T, TI}
+   nlist::PairList{T,TI}
+   order::Val{N}
+end
 
 macro symm(NN, ex)
    N = eval(NN)
@@ -47,20 +53,42 @@ macro symm(NN, ex)
    end)
 end
 
-
-function s(b0, b1)
-   @symm 3 for j = b0:b1
-      println(j)
+function _find_next_{TI}(j::Vector{TI}, n::TI, first::Vector{TI})
+   # DEBUG CODE
+   # @assert issorted(j[first[n]:first[n+1]-1])
+   for m = first[n]:first[n+1]-1
+      if j[m] > n
+         return m
+      end
    end
+   return zero(TI)
 end
 
-s(3, 8)
 
-
-function t(b0, b1, ::Val{N}) where N
-   @symm N for j = b0:b1
-      println(j)
+function mapreduce_sym!(f, out::AbstractVector, it::NBodyIterator{N}) where N
+   nlist = it.nlist
+   nt, nn = mt_split(nsites(nlist))
+   @threads for it = 1:nt
+      for i = nn[it]:(nn[it+1]-1)
+         # get the index of a neighbour > n
+         a0 = _find_next_(nlist.j, n, nlist.first)
+         a0 == 0 && continue  # (if no such index exists)
+         # get the index up to which to loop
+         a1 = nlist.first[n+1]-1
+         j, r, R = site(nlist, i)
+         @symm N for J = a0:a1
+            # compute the N(N+1)/2 vector of distances
+            s = simplex_lengths(r, R)
+            out[j[J]] .+= f(s) / length(J)
+         end
+      end
    end
+   return out
 end
 
-t(3, 8, Val(3))
+
+function t(it::Val{N})
+   @symm N for i = 1:5
+      println(i)
+   end
+end

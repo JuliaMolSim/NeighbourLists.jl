@@ -334,11 +334,14 @@ function sort_neigs!(j, r, R, first)
       for n = nn[it]:(nn[it+1]-1)
          if first[n+1] > first[n] + 1
             rg = first[n]:first[n+1]-1
-            I = sortperm(j[rg])
-            rg_perm = rg[I]
-            j[rg] = j[rg_perm]
-            r[rg] = r[rg_perm]
-            R[rg] = R[rg_perm]
+            jrg = j[rg]
+            if !issorted(jrg)
+               I = sortperm(j[rg])
+               rg_perm = rg[I]
+               j[rg] = j[rg_perm]
+               r[rg] = r[rg_perm]
+               R[rg] = R[rg_perm]
+            end
          end
       end
    end

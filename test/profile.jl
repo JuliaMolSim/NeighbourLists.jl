@@ -24,7 +24,7 @@ for L in [4, 10, 30]
    C = JMat(cell(at))
    X = positions(at)
    perbc = JVec(pbc(at))
-   cutoff = 2.1 * rnn(:Si)
+   cutoff = 3.5 * rnn(:Si)
 
    println("Julia Nlist")
    @btime PairList($X, $cutoff, $C, $perbc, sorted = false)
