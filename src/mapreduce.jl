@@ -138,8 +138,10 @@ end
 ```
 here, `i` is a `CartesianIndex`.
 """
-macro symm(NN, ex)
-   N = eval(NN)
+macro symm(N, ex)
+   if N isa Symbol
+      N = eval(N)
+   end
    @assert ex.head == :for
    @assert length(ex.args) == 2
    ex_for = ex.args[1]
@@ -154,7 +156,7 @@ macro symm(NN, ex)
    for n = 2:N
       loopstr *= ", $i$n = $i$(n-1)+1:(($a1)-$(N-n))"
    end
-   loopstr *= "\n $i = CartesianIndex($(i)1"
+   loopstr *= "\n $i = SVector{$N, Int}($(i)1"
    for n = 2:N
       loopstr *= ", $i$n"
    end
@@ -205,49 +207,79 @@ function _find_next_{TI}(j::Vector{TI}, n::TI, first::Vector{TI})
    return zero(TI)
 end
 
+"""
+`simplex_lengths`: compute the sidelengths of a simplex
+and return the corresponding pairs of X indices
+"""
+function simplex_lengths!(s, a, b, I::SVector{N, TI}, X) where {N, TI <: Integer}
+   n = 0
+   for i = 1:N-1, j = i+1:N
+      n += 1
+      a[n] = I[i]
+      b[n] = I[j]
+      s[n] = norm(X[a[n]] - X[b[n]])
+   end
+   return SVector(s), SVector(a), SVector(b)
+end
 
-function mapreduce_sym!(f, out::AbstractVector, it::NBodyIterator{N}) where N
-   nlist = it.nlist
-   nt, nn = mt_split(nsites(nlist))
-   @threads for it = 1:nt
-      for i = nn[it]:(nn[it+1]-1)
-         # get the index of a neighbour > n
-         a0 = _find_next_(nlist.j, n, nlist.first)
-         a0 == 0 && continue  # (if no such index exists)
-         # get the index up to which to loop
-         a1 = nlist.first[n+1]-1
-         j, r, R = site(nlist, i)
-         @symm N for J = a0:a1
-            # compute the N(N+1)/2 vector of distances
-            s = simplex_lengths(r, R)
-            out[j[J]] .+= f(s) / length(J)
+@generated function mapreduce_sym!(
+         f, out::AbstractVector, it::NBodyIterator{N, T, TI}) where {N, T, TI}
+   quote
+      #                             ~~~~~~~~~~~~~~~~~~~~~ generic from here
+      nlist = it.nlist
+      nt, nn = mt_split(nsites(nlist))
+      @threads for it = 1:nt
+         # allocate some temporary arrays
+         N2 = ($N*($N-1))÷2
+         a_ = zero(MVector{N2, TI})
+         b_ = zero(MVector{N2, TI})
+         s_ = zero(MVector{N2, T})
+         # loop over the range allocated to this thread
+         for i = nn[it]:(nn[it+1]-1)
+            # get the index of a neighbour > n
+            a0 = _find_next_(nlist.j, n, nlist.first)
+            a0 == 0 && continue  # (if no such index exists)
+            # get the index up to which to loop
+            a1 = nlist.first[n+1]-1
+            #                        ~~~~~~~~~~~~~~~~~~~ generic up to here
+            @symm $N for J = a0:a1
+               # compute the N(N+1)/2 vector of distances
+               s, _, _ = simplex_lengths(s_, a_, b_, [SVector(i); J], nlist.X)
+               out[J] .+= f(s) / $N
+            end
          end
       end
+      return out
    end
-   return out
 end
 
 
-# function mapreduce_sym_d!{S,T}(f, out::AbstractVector{S}, it::NBodyIterator{3,T})
-#    i, j, r, R, first = it.nlist.i, it.nlist.j, it.nlist.r, it.nlist.R, it.nlist.first
-#    for n = 1:nsites(it.nlist)
-#       # get the index of a neighbour > n
-#       a0 = _find_next_(j, n, first)
-#       if a0 == 0; continue; end  # (if no such index exists)
-#       # get the index up to which to loop
-#       a1 = first[n+1]-1
-#       # loop over unique ordered tuples
-#       for a = a0:a1-1, b = a0+1:a1
-#          rab = norm(R[b]-R[a])
-#          s = SVector{3, T}(r[a], rab, r[b])
-#          f_ = f(s) / 3.0
-#          f1a = (f_[1]/r[a]) * R[a]
-#          f2ab = (f_[2]/rab) * (R[a]-R[b])
-#          f3b = (f_[3]/r[b]) * R[b]
-#          out[n] += - f1a  - f3b
-#          out[j[a]] += f1a + f2ab
-#          out[j[b]] += - f2ab + f3b
+# @generated function mapreduce_sym_d!(df, out::AbstractVector,
+#                                      it::NBodyIterator{N}) where N
+#    quote
+#       nlist = it.nlist
+#       nt, nn = mt_split(nsites(nlist))
+#       @threads for it = 1:nt
+#          for i = nn[it]:(nn[it+1]-1)
+#             # get the index of a neighbour > n
+#             a0 = _find_next_(nlist.j, n, nlist.first)
+#             a0 == 0 && continue  # (if no such index exists)
+#             # get the index up to which to loop
+#             a1 = nlist.first[n+1]-1
+#             j, r, R = site(nlist, i)
+#             @symm $N for J = a0:a1
+#                # compute the N(N+1)/2 vector of distances
+#                s, a, b = simplex_lengths(r, R)
+#                df_ = df(s)
+#                for l = 1:length(s)
+#                   Rab = nlist.X[a[l]] - nlist.X[b[l]]
+#                   Sab = Rab / norm(Rab)
+#                   out[a[l]] += df_[l] * Sab
+#                   out[b[l]] -= df_[l] * Sab
+#                end
+#             end
+#          end
 #       end
+#       return out
 #    end
-#    return out
 # end

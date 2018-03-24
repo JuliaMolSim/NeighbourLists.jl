@@ -12,7 +12,7 @@ include("cell_list.jl")
 include("iterators.jl")
 
 # alternative assembly protocol more akin to mapreduce
-# include("mapreduce.jl")
+include("mapreduce.jl")
 
 
 end # module
