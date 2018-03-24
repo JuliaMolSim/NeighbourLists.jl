@@ -211,46 +211,62 @@ end
 `simplex_lengths`: compute the sidelengths of a simplex
 and return the corresponding pairs of X indices
 """
-function simplex_lengths!(s, a, b, I::SVector{N, TI}, X) where {N, TI <: Integer}
+function simplex_lengths!(s, a, b, i, J::SVector{N, TI}, nlist
+                           ) where {N, TI <: Integer}
    n = 0
-   for i = 1:N-1, j = i+1:N
+   for l = 1:N
       n += 1
-      a[n] = I[i]
-      b[n] = I[j]
-      s[n] = norm(X[a[n]] - X[b[n]])
+      a[n] = i
+      b[n] = nlist.j[J[l]]
+      s[n] = nlist.r[J[l]]
+   end
+   for i1 = 1:N-1, j1 = i1+1:N
+      n += 1
+      a[n] = nlist.j[J[i1]]
+      b[n] = nlist.j[J[j1]]
+      s[n] = norm(nlist.R[J[i1]] - nlist.R[J[j1]])
    end
    return SVector(s), SVector(a), SVector(b)
 end
 
-@generated function mapreduce_sym!(
-         f, out::AbstractVector, it::NBodyIterator{N, T, TI}) where {N, T, TI}
+
+@generated function mr_sym_inner!(f, out::AbstractVector,
+         it::NBodyIterator{N, T, TI}, rg) where {N, T, TI}
    quote
-      #                             ~~~~~~~~~~~~~~~~~~~~~ generic from here
       nlist = it.nlist
-      nt, nn = mt_split(nsites(nlist))
-      @threads for it = 1:nt
-         # allocate some temporary arrays
-         N2 = ($N*($N-1))÷2
-         a_ = zero(MVector{N2, TI})
-         b_ = zero(MVector{N2, TI})
-         s_ = zero(MVector{N2, T})
-         # loop over the range allocated to this thread
-         for i = nn[it]:(nn[it+1]-1)
-            # get the index of a neighbour > n
-            a0 = _find_next_(nlist.j, n, nlist.first)
-            a0 == 0 && continue  # (if no such index exists)
-            # get the index up to which to loop
-            a1 = nlist.first[n+1]-1
-            #                        ~~~~~~~~~~~~~~~~~~~ generic up to here
-            @symm $N for J = a0:a1
-               # compute the N(N+1)/2 vector of distances
-               s, _, _ = simplex_lengths(s_, a_, b_, [SVector(i); J], nlist.X)
-               out[J] .+= f(s) / $N
-            end
+      # allocate some temporary arrays
+      N2 = ($N*($N+1))÷2
+      a_ = zero(MVector{N2, TI})
+      b_ = zero(MVector{N2, TI})
+      s_ = zero(MVector{N2, T})
+      # loop over the range allocated to this thread
+      for i in rg
+         # get the index of a neighbour > n
+         a0 = _find_next_(nlist.j, i, nlist.first)
+         a0 == 0 && continue  # (if no such index exists)
+         # get the index up to which to loop
+         a1 = nlist.first[i+1]-1
+         #                        ~~~~~~~~~~~~~~~~~~~ generic up to here
+         @symm $N for J = a0:a1
+            # compute the N(N+1)/2 vector of distances
+            s, _, _ = simplex_lengths!(s_, a_, b_, i, J, nlist)
+            f_ = f(s) / ($N+1)
+            out[i] += f_
+            for l = 1:length(J)
+               out[nlist.j[J[l]]] .+= f_
+            end 
          end
       end
-      return out
    end
+end
+
+function mapreduce_sym!(
+         f, out::AbstractVector, it::NBodyIterator{N, T, TI}) where {N, T, TI}
+   nt, nn = mt_split(nsites(it.nlist))
+   for i = 1:nt
+      mr_sym_inner!(f, out, it, nn[i]:(nn[i+1]-1))
+   end
+   return out
 end
 
 

@@ -2,6 +2,7 @@
 using NeighbourLists: SMat, SVec
 using Base.Test
 
+
 include("nn_list.jl")
 
 Ns = [3,3,4,4,5,5]

@@ -20,6 +20,7 @@ notCI = !isCI
 # end
 
 # ----------------- TESTS -------------------
+include("test_aux.jl")
 
 @testset "NeighbourLists" begin
 
