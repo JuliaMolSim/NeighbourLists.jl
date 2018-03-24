@@ -13,6 +13,7 @@ fnbody_d(rs) = ForwardDiff.gradient(fnbody, rs)
 function naive_M_body(X, f, M, rcut)
    N = length(X)
    E = 0.0
+   cnt = 0
    start = CartesianIndex(ntuple(_->1, M))
    stop = CartesianIndex(ntuple(_->N, M))
    for j in CartesianRange(start, stop)
@@ -21,10 +22,12 @@ function naive_M_body(X, f, M, rcut)
          n += 1
          s[n] = norm(X[j[a]] - X[j[b]])
       end
-      if maximum(s) < rcut
+      if 0 < minimum(s) && maximum(s) <= rcut
+         cnt += 1/M
          E += f(s) / M
       end
    end
+   @show cnt
    return E
 end
 
@@ -34,8 +37,9 @@ end
 # fnbody_d(rs)
 
 println("--------------------------------------")
-MM = [3,3,3,4,4] # ,5]  # body orders
-for M in MM
+MM = [2,2,3,3,4,4,5]  # body orders
+FF = [1,1,2,2,6,6,24]
+for (M, F) in zip(MM, FF)
    # create a not-too-large copper cell
    X, C, _ = rand_config(2)
    nat = length(X)
@@ -48,5 +52,5 @@ for M in MM
    # assemble energy naively
    Enaive = naive_M_body(X, fnbody, M, rcut)
 
-   @show Emr, Enaive
+   @show Emr, Enaive/factorial(M-1)
 end
