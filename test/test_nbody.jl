@@ -2,7 +2,7 @@ using ForwardDiff, StaticArrays, NeighbourLists
 using Base.Test
 
 # uncomment for testing from editor/file
-include("test_aux.jl")
+# include("test_aux.jl")
 
 # MODEL N-Body function
 rcut = 2.1
@@ -10,6 +10,11 @@ fnbody = let rcut = rcut
    rs -> sqrt(sum(exp.(0.5-rs))) .* prod( (rs/rcut-1.0).^2 .* (rs .< rcut) )
 end
 fnbody_d(rs) = ForwardDiff.gradient(fnbody, rs)
+
+# # check that fnbody works as expected
+# rs = @SVector rand(5)
+# fnbody(rs)
+# fnbody_d(rs)
 
 function naive_M_body{T}(X::Vector{SVec{T}}, f, M, rcut)
    N = length(X)
@@ -42,17 +47,25 @@ function grad_naive_M_body(X, f, M, rcut)
    return vecs(g)
 end
 
-# # check that fnbody works as expected
-# rs = @SVector rand(5)
-# fnbody(rs)
-# fnbody_d(rs)
+function M_body(X, f, M, rcut, C)
+   nlist = PairList(X, rcut, C, (false, false, false), sorted = true)
+   return NeighbourLists.mapreduce_sym!(f, zeros(length(X)),
+                                 NeighbourLists.nbodies(M, nlist)) |> sum
+end
+
+function grad_M_body(X, df, M, rcut, C)
+   nlist = PairList(X, rcut, C, (false, false, false), sorted = true)
+   return NeighbourLists.mapreduce_sym_d!(df, zeros(SVec{Float64}, length(X)),
+                                 NeighbourLists.nbodies(M, nlist))
+end
+
 
 
 println("--------------------------------------")
 println("    Testing NBodyIterator")
 println("--------------------------------------")
 println("Check that the energy is consistent with a naive implementation")
-MM = [2,2,3,3,3,4,4]  # body orders
+MM = [2,2,3,3,3,4,4,5]  # body orders
 println("   N     Nat    =>   |Emr-Enaive|")
 for M in MM
    # create a not-too-large copper cell
@@ -60,17 +73,39 @@ for M in MM
    nat = length(X)
 
    # assemble energy via neighbourlist and map-reduce
-   nlist = PairList(X, rcut, C, (false, false, false), sorted = true)
-   @time Emr = NeighbourLists.mapreduce_sym!(fnbody, zeros(nat),
-                                 NeighbourLists.nbodies(M, nlist)) |> sum
-   @time Emr_d = NeighbourLists.mapreduce_sym_d!(fnbody_d, zeros(SVec{Float64}, nat),
-                                 NeighbourLists.nbodies(M, nlist))
-
+   Emr = M_body(X, fnbody, M, rcut, C)
    # assemble energy naively
-   @time Enaive = naive_M_body(X, fnbody, M, rcut)
-   @time Enaive_d = grad_naive_M_body(X, fnbody, M, rcut)
+   Enaive = naive_M_body(X, fnbody, M, rcut)
 
-   grad_err = maximum(norm.(Emr_d - Enaive_d))
-   println("   $M      $nat    =>   $(abs(Emr - Enaive)),  $grad_err")
+   println("   $M      $nat    =>   $(abs(Emr - Enaive))")
    @test Emr ≈ Enaive
+end
+
+
+println("--------------------------------------")
+println("Finite-difference tests")
+MM = [2,3,4,5]  # body orders
+for M in MM
+   println(" [M = $M]")
+   X, C, _ = rand_config(2)
+   nat = length(X)
+   dE = grad_M_body(X, fnbody_d, M, rcut, C)
+   dE = mat(dE)[:]
+   E = M_body(X, fnbody, M, rcut, C)
+   @printf("    h    | error \n")
+   @printf("---------|----------- \n")
+   x = mat(X)[:]
+   errors = []
+   for p = 2:11
+      h = 0.1^p
+      dEh = copy(dE)
+      for n = 1:length(dE)
+         x[n] += h
+         dEh[n] = (M_body(vecs(x), fnbody, M, rcut, C) - E) / h
+         x[n] -= h
+      end
+      push!(errors, vecnorm(dE - dEh, Inf))
+      @printf(" %1.1e | %4.2e  \n", h, errors[end])
+   end
+   @test minimum(errors) <= 1e-3 * maximum(errors)
 end

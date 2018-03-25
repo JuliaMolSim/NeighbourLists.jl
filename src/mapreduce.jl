@@ -310,34 +310,3 @@ function mapreduce_sym_d!(
    end
    return out
 end
-
-
-# @generated function mapreduce_sym_d!(df, out::AbstractVector,
-#                                      it::NBodyIterator{N}) where N
-#    quote
-#       nlist = it.nlist
-#       nt, nn = mt_split(nsites(nlist))
-#       @threads for it = 1:nt
-#          for i = nn[it]:(nn[it+1]-1)
-#             # get the index of a neighbour > n
-#             a0 = _find_next_(nlist.j, n, nlist.first)
-#             a0 == 0 && continue  # (if no such index exists)
-#             # get the index up to which to loop
-#             a1 = nlist.first[n+1]-1
-#             j, r, R = site(nlist, i)
-#             @symm $N for J = a0:a1
-#                # compute the N(N+1)/2 vector of distances
-#                s, a, b = simplex_lengths(r, R)
-#                df_ = df(s)
-#                for l = 1:length(s)
-#                   Rab = nlist.X[a[l]] - nlist.X[b[l]]
-#                   Sab = Rab / norm(Rab)
-#                   out[a[l]] += df_[l] * Sab
-#                   out[b[l]] -= df_[l] * Sab
-#                end
-#             end
-#          end
-#       end
-#       return out
-#    end
-# end
