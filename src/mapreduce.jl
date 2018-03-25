@@ -233,7 +233,6 @@ end
 @generated function mr_sym_inner!(f, out::AbstractVector,
          it::NBodyIterator{N, T, TI}, rg) where {N, T, TI}
    quote
-      cnt = 0
       nlist = it.nlist
       # allocate some temporary arrays
       N2 = ($N*($N-1))÷2
@@ -249,7 +248,6 @@ end
          a1 = nlist.first[i+1]-1
          #                        ~~~~~~~~~~~~~~~~~~~ generic up to here
          @symm $(N-1) for J = a0:a1
-            cnt += 1
             # compute the N(N+1)/2 vector of distances
             s, _, _ = simplex_lengths!(s_, a_, b_, i, J, nlist)
             f_ = f(s) / $N
@@ -259,18 +257,15 @@ end
             end
          end
       end
-      return cnt
    end
 end
 
 function mapreduce_sym!(
          f, out::AbstractVector, it::NBodyIterator{N, T, TI}) where {N, T, TI}
    nt, nn = mt_split(nsites(it.nlist))
-   cnt = 0
    for i = 1:nt
-      cnt += mr_sym_inner!(f, out, it, nn[i]:(nn[i+1]-1))
+      mr_sym_inner!(f, out, it, nn[i]:(nn[i+1]-1))
    end
-   @show cnt 
    return out
 end
 

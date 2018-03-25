@@ -1,7 +1,8 @@
 using ForwardDiff, StaticArrays, NeighbourLists
+using Base.Test
 
-include("test_aux.jl")
-
+# uncomment for testing from editor/file
+# include("test_aux.jl")
 
 # MODEL N-Body function
 rcut = 2.1
@@ -23,11 +24,11 @@ function naive_M_body(X, f, M, rcut)
          s[n] = norm(X[j[a]] - X[j[b]])
       end
       if 0 < minimum(s) && maximum(s) <= rcut
-         cnt += 1/M
-         E += f(s) / M
+         # each of these terms occur factorial(M) times, i.e. for
+         # every permutation of the indices!
+         E += f(s) / factorial(M)
       end
    end
-   @show cnt
    return E
 end
 
@@ -36,14 +37,17 @@ end
 # fnbody(rs)
 # fnbody_d(rs)
 
+
 println("--------------------------------------")
-MM = [2,2,3,3,4,4,5]  # body orders
-FF = [1,1,2,2,6,6,24]
-for (M, F) in zip(MM, FF)
+println("    Testing NBodyIterator")
+println("--------------------------------------")
+MM = [2,2,3,3,3,4,4,5]  # body orders
+println("   N     Nat    =>   |Emr-Enaive|")
+for M in MM
    # create a not-too-large copper cell
    X, C, _ = rand_config(2)
    nat = length(X)
-   @show M, nat
+
    # assemble energy via neighbourlist and map-reduce
    nlist = PairList(X, rcut, C, (false, false, false), sorted = true)
    Emr = NeighbourLists.mapreduce_sym!(fnbody, zeros(nat),
@@ -52,5 +56,6 @@ for (M, F) in zip(MM, FF)
    # assemble energy naively
    Enaive = naive_M_body(X, fnbody, M, rcut)
 
-   @show Emr, Enaive/factorial(M-1)
+   println("   $M      $nat    =>   $(abs(Emr - Enaive))")
+   @test abs(Emr - Enaive) < 1e-10
 end
