@@ -27,9 +27,6 @@ using NeighbourLists
 ?PairList
 ```
 
-## TODO
-
-* fix the performance problem, it should be possible to be closer to C
-* 2D (structure in place, just needs a little time investment and testing)
-* finish the iterators
-* fix multi-threading; the current version scales terribly
+Until I get around to writing some documentation, look at the tests
+and `JuLIP.jl` on how to use this package. Or just open an issue and
+ask.
