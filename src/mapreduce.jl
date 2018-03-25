@@ -270,6 +270,48 @@ function mapreduce_sym!(
 end
 
 
+@generated function mr_sym_d_inner!(df, out::AbstractVector,
+         it::NBodyIterator{N, T, TI}, rg) where {N, T, TI}
+   quote
+      nlist = it.nlist
+      # allocate some temporary arrays
+      N2 = ($N*($N-1))÷2
+      a_ = zero(MVector{N2, TI})
+      b_ = zero(MVector{N2, TI})
+      s_ = zero(MVector{N2, T})
+      # loop over the range allocated to this thread
+      for i in rg
+         # get the index of a neighbour > n
+         a0 = _find_next_(nlist.j, i, nlist.first)
+         a0 == 0 && continue  # (if no such index exists)
+         # get the index up to which to loop
+         a1 = nlist.first[i+1]-1
+         @symm $(N-1) for J = a0:a1
+            # compute the N(N+1)/2 vector of distances
+            s, a, b = simplex_lengths!(s_, a_, b_, i, J, nlist)
+         #                        ~~~~~~~~~~~~~~~~~~~ generic up to here
+            df_ = df(s)
+            for l = 1:length(s)
+               Rab = nlist.X[a[l]] - nlist.X[b[l]]
+               Sab = Rab / norm(Rab)
+               out[a[l]] += df_[l] * Sab
+               out[b[l]] -= df_[l] * Sab
+            end
+         end
+      end
+   end
+end
+
+function mapreduce_sym_d!(
+         df, out::AbstractVector, it::NBodyIterator{N, T, TI}) where {N, T, TI}
+   nt, nn = mt_split(nsites(it.nlist))
+   for i = 1:nt
+      mr_sym_d_inner!(df, out, it, nn[i]:(nn[i+1]-1))
+   end
+   return out
+end
+
+
 # @generated function mapreduce_sym_d!(df, out::AbstractVector,
 #                                      it::NBodyIterator{N}) where N
 #    quote
