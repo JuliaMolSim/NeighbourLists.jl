@@ -268,10 +268,9 @@ end
 
 function mapreduce_sym!(
          f, out::AbstractVector, it::NBodyIterator{N, T, TI}) where {N, T, TI}
-   nat = nsites(it.nlist)
-   nt, nn = mt_split(nat)   # mt_split_interlaced(nat)
-   @threads for i = 1:nt
-      mr_sym_inner!(f, out, it, nn[i]:nn[i+1]-1)
+   nt, nn = mt_split(nsites(it.nlist))
+   for i = 1:nt
+      mr_sym_inner!(f, out, it, nn[i]:(nn[i+1]-1))
    end
    return out
 end
@@ -312,8 +311,8 @@ end
 function mapreduce_sym_d!(
          df, out::AbstractVector, it::NBodyIterator{N, T, TI}) where {N, T, TI}
    nt, nn = mt_split(nsites(it.nlist))
-   @threads for i = 1:nt
-      mr_sym_d_inner!(df, out, it, nn[i]:nn[i+1]-1)
+   for i = 1:nt
+      mr_sym_d_inner!(df, out, it, nn[i]:(nn[i+1]-1))
    end
    return out
 end
