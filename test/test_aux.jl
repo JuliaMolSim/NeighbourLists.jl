@@ -14,32 +14,36 @@ end
 
 # --------- MANY BODY CODE THAT IS SHARED ACROSS TESTS ------------
 
-function fnbody(r, r0, rcut)
-   E = 0.0
-   for n = 1:length(r)
-      E += exp(1.0 - r[n]/r0) * (r[n]/rcut - 1.0)^2
-   end
-   return sqrt(1+E)
-end
+# function fnbody(r, r0, rcut)
+#    E = 0.0
+#    for n = 1:length(r)
+#       E += exp(1.0 - r[n]/r0) * (r[n]/rcut - 1.0)^2
+#    end
+#    return sqrt(1+E)
+# end
 
-fnbody_ad(r, r0, rcut) = ForwardDiff.gradient(r->fnbody(r,r0,rcut), r)
+# function fnbody_d(r, r0, rcut)
+#    E = 0.0
+#    for n = 1:length(r)
+#       E += exp(1.0 - r[n]/r0) * (r[n]/rcut - 1.0)^2
+#    end
+#    rtE = sqrt(1+E)
+#    return (0.5 / sqrt(1+E)) * (
+#               (-1/r0) * exp.(1.0 .- r./r0) .* (r/rcut .- 1.0).^2
+#             + exp.(1.0 .- r./r0) .* (2.0/rcut) .* (r./rcut .- 1.0) )
+# end
 
-function fnbody_d(r, r0, rcut)
-   E = 0.0
-   for n = 1:length(r)
-      E += exp(1.0 - r[n]/r0) * (r[n]/rcut - 1.0)^2
-   end
-   rtE = sqrt(1+E)
-   return (0.5 / sqrt(1+E)) * (
-              (-1/r0) * exp.(1.0 .- r./r0) .* (r/rcut .- 1.0).^2
-            + exp.(1.0 .- r./r0) .* (2.0/rcut) .* (r./rcut .- 1.0) )
-end
+fnbody(rs, r0, rcut) =
+   sqrt(sum(exp.(0.5-rs))) .* prod( (rs/rcut-1.0).^2 .* (rs .< rcut) )
 
-println("Checking that `fnbody` is correct...")
-for n = 1:5
-   r = rand(SVector{3, Float64})
-   @test fnbody_d(r, 1.0, 2.0) ≈ fnbody_ad(r, 1.0, 2.0)
-end
+fnbody_d(r, r0, rcut) = ForwardDiff.gradient(r->fnbody(r,r0,rcut), r)
+
+
+# println("Checking that `fnbody` is correct...")
+# for n = 1:5
+#    r = rand(SVector{3, Float64})
+#    @test fnbody_d(r, 1.0, 2.0) ≈ fnbody_ad(r, 1.0, 2.0)
+# end
 
 # Generate a MODEL N-Body function
 function gen_fnbody(rcut, r0=1.0)
