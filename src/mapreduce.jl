@@ -259,7 +259,7 @@ end
             f_ = f(s) / $N
             out[i] += f_
             for l = 1:length(J)
-               out[nlist.j[J[l]]] .+= f_
+               out[nlist.j[J[l]]] += f_
             end
          end
       end
