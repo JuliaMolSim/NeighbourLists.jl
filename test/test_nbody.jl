@@ -4,17 +4,16 @@ using Base.Test
 # uncomment for testing from editor/file
 # include("test_aux.jl")
 
-# MODEL N-Body function
-rcut = 2.1
-fnbody = let rcut = rcut
-   rs -> sqrt(sum(exp.(0.5-rs))) .* prod( (rs/rcut-1.0).^2 .* (rs .< rcut) )
-end
-fnbody_d(rs) = ForwardDiff.gradient(fnbody, rs)
+# # MODEL N-Body function
+# rcut = 2.1
+# fn = let rcut = rcut
+#    rs -> sqrt(sum(exp.(0.5-rs))) .* prod( (rs/rcut-1.0).^2 .* (rs .< rcut) )
+# end
+# fn_d(rs) = ForwardDiff.gradient(fn, rs)
 
-# # check that fnbody works as expected
-# rs = @SVector rand(5)
-# fnbody(rs)
-# fnbody_d(rs)
+let rcut = 2.1
+
+fn, fn_d = gen_fnbody(rcut)
 
 function naive_M_body{T}(X::Vector{SVec{T}}, f, M, rcut)
    N = length(X)
@@ -73,9 +72,9 @@ for M in MM
    nat = length(X)
 
    # assemble energy via neighbourlist and map-reduce
-   Emr = M_body(X, fnbody, M, rcut, C)
+   Emr = M_body(X, fn, M, rcut, C)
    # assemble energy naively
-   Enaive = naive_M_body(X, fnbody, M, rcut)
+   Enaive = naive_M_body(X, fn, M, rcut)
 
    println("   $M      $nat    =>   $(abs(Emr - Enaive))")
    @test Emr ≈ Enaive
@@ -89,9 +88,9 @@ for M in MM
    println(" [M = $M]")
    X, C, _ = rand_config(2)
    nat = length(X)
-   dE = grad_M_body(X, fnbody_d, M, rcut, C)
+   dE = grad_M_body(X, fn_d, M, rcut, C)
    dE = mat(dE)[:]
-   E = M_body(X, fnbody, M, rcut, C)
+   E = M_body(X, fn, M, rcut, C)
    @printf("    h    | error \n")
    @printf("---------|----------- \n")
    x = mat(X)[:]
@@ -101,7 +100,7 @@ for M in MM
       dEh = copy(dE)
       for n = 1:length(dE)
          x[n] += h
-         dEh[n] = (M_body(vecs(x), fnbody, M, rcut, C) - E) / h
+         dEh[n] = (M_body(vecs(x), fn, M, rcut, C) - E) / h
          x[n] -= h
       end
       push!(errors, vecnorm(dE - dEh, Inf))
@@ -109,3 +108,7 @@ for M in MM
    end
    @test minimum(errors) <= 1e-3 * maximum(errors)
 end
+
+
+
+end # let block

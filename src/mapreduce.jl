@@ -232,13 +232,13 @@ end
 
 @generated function mr_sym_inner!(f, out::AbstractVector,
          it::NBodyIterator{N, T, TI}, rg) where {N, T, TI}
+   N2 = (N*(N-1))÷2
    quote
       nlist = it.nlist
       # allocate some temporary arrays
-      N2 = ($N*($N-1))÷2
-      a_ = zero(MVector{N2, TI})
-      b_ = zero(MVector{N2, TI})
-      s_ = zero(MVector{N2, T})
+      a_ = zero(MVector{$N2, TI})
+      b_ = zero(MVector{$N2, TI})
+      s_ = zero(MVector{$N2, T})
       # loop over the range allocated to this thread
       for i in rg
          # get the index of a neighbour > n
@@ -272,13 +272,13 @@ end
 
 @generated function mr_sym_d_inner!(df, out::AbstractVector,
          it::NBodyIterator{N, T, TI}, rg) where {N, T, TI}
+   N2 = (N*(N-1))÷2
    quote
       nlist = it.nlist
       # allocate some temporary arrays
-      N2 = ($N*($N-1))÷2
-      a_ = zero(MVector{N2, TI})
-      b_ = zero(MVector{N2, TI})
-      s_ = zero(MVector{N2, T})
+      a_ = zero(MVector{$N2, TI})
+      b_ = zero(MVector{$N2, TI})
+      s_ = zero(MVector{$N2, T})
       # loop over the range allocated to this thread
       for i in rg
          # get the index of a neighbour > n
