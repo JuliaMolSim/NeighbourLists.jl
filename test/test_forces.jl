@@ -1,6 +1,6 @@
 
 using NeighbourLists
-using JuLIP, JuLIP.Potentials, StaticArrays
+using JuLIP, StaticArrays
 
 
 # ==================================
@@ -25,8 +25,8 @@ end
 function lj_mapreduce{T}(nlist::CellList{T}, V)
    Es = mapreduce_sym!(zeros(T, nsites(nlist)),
                       (r,R) -> V(r), pairs(nlist) )
-   dE = mapreduce_antisym!(zeros(JVec{T}, nsites(nlist)),
-                      (r,R) -> ((@D V(r))/r) * R, pairs(nlist) )
+   dE = mapreduce_sym_d!(zeros(JVec{T}, nsites(nlist)),
+                      (r,R) -> ((@D V(r)), pairs(nlist) )
 end
 
 
@@ -104,8 +104,8 @@ println("----------------------------------------")
 r0 = rnn("Fe")
 cutoff = r0 * 2.7
 ϕ = (@analytic r -> 1/r) * C1Shift(cutoff)
-ρ = (@analytic r -> exp(-r)) * C1Shift(cutoff)
-eam = EAM(ϕ, ρ, @analytic t -> sqrt(t))
+ρ = (@analytic r -> exp(-r/3)) * C1Shift(cutoff)
+eam = EAM(ϕ, ρ, @analytic t -> sqrt(1+t))
 
 for L in (5, 10, 20)
    at = bulk("Fe", cubic=true) * L

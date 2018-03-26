@@ -20,11 +20,12 @@ notCI = !isCI
 # end
 
 # ----------------- TESTS -------------------
-include("test_aux.jl")
+
 
 @testset "NeighbourLists" begin
 
-   @testset "CellList" begin include("test_celllist.jl") end
+   @testset "AUX" begin include("test_aux.jl") end
+   # @testset "CellList" begin include("test_celllist.jl") end
    @testset "NBodyIterators" begin include("test_nbody.jl") end
 
    # pointless until we switch to comparing against ASE / matscipy

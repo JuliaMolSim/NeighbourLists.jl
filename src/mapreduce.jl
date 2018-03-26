@@ -12,6 +12,12 @@ function mt_split(niter::TI, maxthreads=1_000_000_000) where TI
    return nt, nn
 end
 
+function mt_split_interlaced(niter::TI, maxthreads=1_000_000_000) where TI
+   nt = minimum([maxthreads, nthreads(), niter])
+   nn = [ j:nt:niter for j = 1:nt ]
+   return nt, nn
+end
+
 
 """
 mapreduce!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})
@@ -232,13 +238,13 @@ end
 
 @generated function mr_sym_inner!(f, out::AbstractVector,
          it::NBodyIterator{N, T, TI}, rg) where {N, T, TI}
+   N2 = N*(N-1)÷2
    quote
       nlist = it.nlist
       # allocate some temporary arrays
-      N2 = ($N*($N-1))÷2
-      a_ = zero(MVector{N2, TI})
-      b_ = zero(MVector{N2, TI})
-      s_ = zero(MVector{N2, T})
+      a_ = zero(MVector{$N2, TI})
+      b_ = zero(MVector{$N2, TI})
+      s_ = zero(MVector{$N2, T})
       # loop over the range allocated to this thread
       for i in rg
          # get the index of a neighbour > n
@@ -246,10 +252,10 @@ end
          a0 == 0 && continue  # (if no such index exists)
          # get the index up to which to loop
          a1 = nlist.first[i+1]-1
-         #                        ~~~~~~~~~~~~~~~~~~~ generic up to here
          @symm $(N-1) for J = a0:a1
             # compute the N(N+1)/2 vector of distances
             s, _, _ = simplex_lengths!(s_, a_, b_, i, J, nlist)
+         #                        ~~~~~~~~~~~~~~~~~~~ generic up to here
             f_ = f(s) / $N
             out[i] += f_
             for l = 1:length(J)
@@ -262,9 +268,10 @@ end
 
 function mapreduce_sym!(
          f, out::AbstractVector, it::NBodyIterator{N, T, TI}) where {N, T, TI}
-   nt, nn = mt_split(nsites(it.nlist))
-   for i = 1:nt
-      mr_sym_inner!(f, out, it, nn[i]:(nn[i+1]-1))
+   nat = nsites(it.nlist)
+   nt, nn = mt_split_interlaced(nat)
+   @threads for i = 1:nt
+      mr_sym_inner!(f, out, it, nn[i])
    end
    return out
 end
@@ -272,13 +279,13 @@ end
 
 @generated function mr_sym_d_inner!(df, out::AbstractVector,
          it::NBodyIterator{N, T, TI}, rg) where {N, T, TI}
+   N2 = (N*(N-1))÷2
    quote
       nlist = it.nlist
       # allocate some temporary arrays
-      N2 = ($N*($N-1))÷2
-      a_ = zero(MVector{N2, TI})
-      b_ = zero(MVector{N2, TI})
-      s_ = zero(MVector{N2, T})
+      a_ = zero(MVector{$N2, TI})
+      b_ = zero(MVector{$N2, TI})
+      s_ = zero(MVector{$N2, T})
       # loop over the range allocated to this thread
       for i in rg
          # get the index of a neighbour > n
@@ -304,9 +311,9 @@ end
 
 function mapreduce_sym_d!(
          df, out::AbstractVector, it::NBodyIterator{N, T, TI}) where {N, T, TI}
-   nt, nn = mt_split(nsites(it.nlist))
-   for i = 1:nt
-      mr_sym_d_inner!(df, out, it, nn[i]:(nn[i+1]-1))
+   nt, nn = mt_split_interlaced(nsites(it.nlist))
+   @threads for i = 1:nt
+      mr_sym_d_inner!(df, out, it, nn[i])
    end
    return out
 end
