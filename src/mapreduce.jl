@@ -238,7 +238,7 @@ end
 
 @generated function mr_sym_inner!(f, out::AbstractVector,
          it::NBodyIterator{N, T, TI}, rg) where {N, T, TI}
-   N2 = N*(N-1)÷2
+   N2 = (N*(N-1))÷2
    quote
       nlist = it.nlist
       # allocate some temporary arrays

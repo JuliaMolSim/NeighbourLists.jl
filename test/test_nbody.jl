@@ -4,9 +4,9 @@ using Base.Test
 # uncomment for testing from editor/file
 # include("test_aux.jl")
 
-let rcut = 2.1
+let rcut = 2.5
 
-fn, fn_d = gen_fnbody(2.1)
+fn, fn_d = gen_fnbody(rcut)
 
 function naive_n_body{T}(X::Vector{SVec{T}}, f, M, rcut)
    N = length(X)
@@ -32,13 +32,12 @@ end
 vecs{T}(V::Vector{T}) = reinterpret(SVector{3,T}, V, (length(V) ÷ 3,))
 mat{T}(V::Vector{SVector{3,T}}) = reinterpret(T, V, (3, length(V)))
 
-function grad_naive_n_body(X, f, M, rcut)
-   x = mat(X)[:]
-   g = ForwardDiff.gradient( y -> naive_n_body(vecs(y), f, M, rcut),  x)
-   return vecs(g)
-end
-
-
+# NOT NEEDED - WE DO FINITE-DIFFERENCE TESTS INSTEAD!
+# function grad_naive_n_body(X, f, M, rcut)
+#    x = mat(X)[:]
+#    g = ForwardDiff.gradient( y -> naive_n_body(vecs(y), f, M, rcut),  x)
+#    return vecs(g)
+# end
 
 
 println("--------------------------------------")
@@ -91,4 +90,4 @@ for M in MM
 end
 
 
-end  # LET BLOCK
+end # let block
