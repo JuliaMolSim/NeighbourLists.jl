@@ -40,7 +40,7 @@ print("N-body energy and forces benchmark: ")
 at = bulk(:Cu, cubic=true) * 5
 println("bulk :Cu with nat = $(length(at))")
 r0 = rnn(:Cu)
-rcut = 3.1 * r0
+rcut = 2.1 * r0
 X = positions(at)
 C = cell(at)
 f, f_d = gen_fnbody(rcut, r0)

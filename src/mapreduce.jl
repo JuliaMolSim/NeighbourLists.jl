@@ -20,19 +20,19 @@ function mt_split_interlaced(niter::TI, maxthreads=1_000_000_000) where TI
 end
 
 
-"""
-mapreduce!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})
-
-basically a bin_sum, iterate over all pairs, for each pair evaluate
-f(r, R) and add it to out[i] (the first)
-"""
-function mapreduce!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})
-   nlist = it.nlist
-   for n = 1:npairs(nlist)
-      out[nlist.i[n]] += f(nlist.r[n], nlist.R[n])
-   end
-   return out
-end
+# """
+# mapreduce!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})
+#
+# basically a bin_sum, iterate over all pairs, for each pair evaluate
+# f(r, R) and add it to out[i] (the first)
+# """
+# function mapreduce!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})
+#    nlist = it.nlist
+#    for n = 1:npairs(nlist)
+#       out[nlist.i[n]] += f(nlist.r[n], nlist.R[n])
+#    end
+#    return out
+# end
 
 
 """
@@ -41,7 +41,7 @@ end
 symmetric variant of `mapreduce!{S, T}(out::AbstractVector{S}, ...)`, summing only
 over bonds (i,j) with i < j and adding f(R_ij) to both sites i, j.
 """
-function mapreduce_sym!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})
+function mapreduce_sym!{S, T}(f, out::AbstractVector{S}, it::PairIterator{T})
    nlist = it.nlist
    for n = 1:npairs(nlist)
       if  nlist.i[n] < nlist.j[n]    # NB this probably prevents simd
@@ -61,7 +61,7 @@ anti-symmetric variant of `mapreduce!{S, T}(out::AbstractVector{S}, ...)`, summi
 over bonds (i,j) with i < j and adding f(R_ij) to site j and
 -f(R_ij) to site i.
 """
-function mapreduce_antisym!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})
+function mapreduce_sym_d!{S, T}(f, out::AbstractVector{S}, it::PairIterator{T})
    nlist = it.nlist
    for n = 1:npairs(nlist)
       if nlist.i[n] < nlist.j[n]
@@ -72,9 +72,6 @@ function mapreduce_antisym!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T}
    end
    return out
 end
-
-mapreduce_d!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T}) =
-   mapreduce_antisym!(out, f, it)
 
 
 # ============ assembly over sites

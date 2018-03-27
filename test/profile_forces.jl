@@ -23,17 +23,17 @@ end
 
 
 function lj_mapreduce{T}(nlist::PairList{T}, V)
-   Es = mapreduce_sym!(zeros(T, nsites(nlist)),
-                      (r,R) -> V(r), pairs(nlist) )
-   dE = mapreduce_sym_d!(zeros(JVec{T}, nsites(nlist)),
-                      (r,R) -> ((@D V(r)), pairs(nlist) )
+   Es = mapreduce_sym!( (r,R) -> V(r), zeros(T, nsites(nlist)),
+                        pairs(nlist) )
+   dE = mapreduce_sym_d!((r,R) -> (@D V(r)), zeros(JVec{T}, nsites(nlist)),
+                         pairs(nlist) )
 end
 
 function lj_nbody{T}(nlist::PairList{T}, V)
-   Es = mapreduce_sym!(zeros(T, nsites(nlist)),
-                      (r,R) -> V(r), nbodies(2, nlist) )
-   dE = mapreduce_sym_d!(zeros(JVec{T}, nsites(nlist)),
-                      (r,R) -> ((@D V(r)), nbodies(2, nlist) )
+   Es = mapreduce_sym!(r -> V(r[1]),  zeros(T, nsites(nlist)),
+                      nbodies(2, nlist) )
+   dE = mapreduce_sym_d!(r -> (@D V(r[1])),  zeros(JVec{T}, nsites(nlist)),
+                      nbodies(2, nlist) )
 end
 
 
@@ -41,12 +41,12 @@ println("----------------------------------------")
 println("Lennard-Jones Test")
 println("----------------------------------------")
 
-r0 = rnn("Fe")
+r0 = rnn(:Fe)
 cutoff =  r0 * 2.7
 lj = LennardJones(r0, 1.0) * C1Shift(cutoff)
 
 for L in (5, 10, 20)
-   at = bulk("Fe", cubic=true) * L
+   at = bulk(:Fe, cubic=true) * L
    println("Bulk Fe, Nat = $(length(at))")
    println("PairList construction:")
    @time nlist = PairList(positions(at), cutoff, cell(at), pbc(at))
