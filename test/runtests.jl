@@ -21,6 +21,8 @@ notCI = !isCI
 
 # ----------------- TESTS -------------------
 
+println("# threads = $(Base.Threads.nthreads())")
+
 @testset "NeighbourLists" begin
    @testset "Aux" begin include("test_aux.jl") end
    @testset "CellList" begin include("test_celllist.jl") end

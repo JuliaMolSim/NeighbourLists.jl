@@ -52,27 +52,6 @@ function mapreduce_sym!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})
    return out
 end
 
-"""
-`tmapreduce_sym!`
-
-like `mapreduce_sym!` but multi-threaded
-"""
-function tmapreduce_sym!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})
-   nlist = it.nlist
-   nt, nn = mt_split(npairs(nlist))
-   @threads for it = 1:nt
-      for n = nn[it]:(nn[it+1]-1)
-         if  nlist.i[n] < nlist.j[n]    # NB this probably prevents simd
-            f_ = f(nlist.r[n], nlist.R[n])
-            out[nlist.i[n]] += f_
-            out[nlist.j[n]] += f_
-         end
-      end
-   end
-   return out
-end
-
-
 
 """
 `mapreduce_antisym!{T}(out::AbstractVector{SVec{T}}, df, it::PairIterator{T})`
@@ -102,7 +81,7 @@ mapreduce_d!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T}) =
 function map!{S,T}(f, out::AbstractVector{S}, it::SiteIterator{T})
    nlist = it.nlist
    nt, nn = mt_split(nsites(nlist))
-   @threads for it = 1:nt
+   for it = 1:nt
       for i = nn[it]:(nn[it+1]-1)
          j, r, R = site(nlist, i)
          out[i] = f(r, R)
@@ -114,7 +93,7 @@ end
 function map_d!{S,T}(f, out::AbstractVector{S}, it::SiteIterator{T})
    nlist = it.nlist
    nt, nn = mt_split(nsites(nlist))
-   @threads for it = 1:nt
+   for it = 1:nt
       for i = nn[it]:(nn[it+1]-1)
          j, r, R = site(nlist, i)
          f_ = f(r, R)
@@ -267,10 +246,18 @@ end
 end
 
 function mapreduce_sym!(
-         f, out::AbstractVector, it::NBodyIterator{N, T, TI}) where {N, T, TI}
+         f, out::Vector{S}, it::NBodyIterator{N, T, TI}) where {S, N, T, TI}
    nt, nn = mt_split(nsites(it.nlist))
-   for i = 1:nt
-      mr_sym_inner!(f, out, it, nn[i]:(nn[i+1]-1))
+   if nt == 1
+      mr_sym_inner!(f, out, it, 1:length(out))
+   else
+      out_i = [zeros(S, length(out)) for i=1:nt]
+      @threads for i = 1:nt
+         mr_sym_inner!(f, out_i[i], it, nn[i]:(nn[i+1]-1))
+      end
+      for i = 1:nt
+         out .+= out_i[i]
+      end
    end
    return out
 end
@@ -309,10 +296,18 @@ end
 end
 
 function mapreduce_sym_d!(
-         df, out::AbstractVector, it::NBodyIterator{N, T, TI}) where {N, T, TI}
+         df, out::Vector{S}, it::NBodyIterator{N, T, TI}) where {S, N, T, TI}
    nt, nn = mt_split(nsites(it.nlist))
-   for i = 1:nt
-      mr_sym_d_inner!(df, out, it, nn[i]:(nn[i+1]-1))
+   if nt == 1
+      mr_sym_d_inner!(df, out, it, 1:length(out))
+   else
+      out_i = [zeros(S, length(out)) for i=1:nt]
+      @threads for i = 1:nt
+         mr_sym_d_inner!(df, out_i[i], it, nn[i]:(nn[i+1]-1))
+      end
+      for i = 1:nt
+         out .+= out_i[i]
+      end
    end
    return out
 end

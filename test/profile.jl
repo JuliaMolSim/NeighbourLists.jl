@@ -17,36 +17,36 @@ end
 
 println("# Threads = ", Base.Threads.nthreads())
 
-println("Neighbourlist assembly benchmark")
-for L in [4, 10, 30]
-   print("L = $L")
-   # si, non-cubic cell, mixed bc
-   at = bulk(:Si, cubic=true) * L
-   println(", N = $(length(at))")
-   set_pbc!(at, (true, false, true))
-   C = JMat(cell(at))
-   X = positions(at)
-   perbc = JVec(pbc(at))
-   cutoff = 3.5 * rnn(:Si)
-
-   println("Julia Nlist")
-   @btime PairList($X, $cutoff, $C, $perbc, sorted = false)
-   println("Matscipy Nlist")
-   @btime matscipy_nlist($(ASEAtoms(at)), $cutoff)
-   println("------------------------------------------")
-end
+# println("Neighbourlist assembly benchmark")
+# for L in [4, 10, 30]
+#    print("L = $L")
+#    # si, non-cubic cell, mixed bc
+#    at = bulk(:Si, cubic=true) * L
+#    println(", N = $(length(at))")
+#    set_pbc!(at, (true, false, true))
+#    C = JMat(cell(at))
+#    X = positions(at)
+#    perbc = JVec(pbc(at))
+#    cutoff = 3.5 * rnn(:Si)
+#
+#    println("Julia Nlist")
+#    @btime PairList($X, $cutoff, $C, $perbc, sorted = false)
+#    println("Matscipy Nlist")
+#    @btime matscipy_nlist($(ASEAtoms(at)), $cutoff)
+#    println("------------------------------------------")
+# end
 
 print("N-body energy and forces benchmark: ")
 at = bulk(:Cu, cubic=true) * 5
 println("bulk :Cu with nat = $(length(at))")
 r0 = rnn(:Cu)
-rcut = 2.2 * r0
+rcut = 3.1 * r0
 X = positions(at)
 C = cell(at)
 f, f_d = gen_fnbody(rcut, r0)
 nlist = PairList(X, rcut, C, (false, false, false), sorted = true)
 
-for M in [2, 3, 4, 5]
+for M in [2, 3, 4]
    println("M = $M")
    print("  energy: ")
    @btime n_body($f, $M, $nlist)
