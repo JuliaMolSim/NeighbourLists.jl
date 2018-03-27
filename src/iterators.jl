@@ -3,6 +3,8 @@ import Base: start, done, next, length
 
 export pairs, sites, site, nbodies
 
+abstract type AbstractIterator end
+
 inc{T <: Integer}(i::T) = i + T(1)
 
 # -------------- iterator over pairs ---------------
@@ -10,7 +12,7 @@ inc{T <: Integer}(i::T) = i + T(1)
 pairs(nlist::PairList) = PairIterator(nlist)
 
 
-struct PairIterator{T,TI}
+struct PairIterator{T,TI} <: AbstractIterator
    nlist::PairList{T,TI}
 end
 
@@ -18,7 +20,7 @@ start{T,TI}(it::PairIterator{T,TI}) = TI(1)
 done(it::PairIterator, i::Integer) = (i > npairs(it.nlist))
 next(it::PairIterator, i) =
    (it.nlist.i[i], it.nlist.j[i], it.nlist.r[i], it.nlist.R[i]), inc(i)
-length(it::PairIterator) = length(it.nlist)
+length(it::PairIterator) = npairs(it.nlist)
 
 # -------------- iterator over sites ---------------
 
@@ -29,7 +31,7 @@ end
 
 sites(nlist::PairList) = SiteIterator(nlist)
 
-struct SiteIterator{T,TI}
+struct SiteIterator{T,TI}  <: AbstractIterator
    nlist::PairList{T,TI}
 end
 
@@ -42,11 +44,12 @@ length(it::SiteIterator) = nsites(it.nlist)
 # -------------- iterator over n-body terms ---------------
 
 
-struct NBodyIterator{N, T, TI}
+struct NBodyIterator{N, T, TI}  <: AbstractIterator
    nlist::PairList{T,TI}
    order::Val{N}
 end
 
+length(it::NBodyIterator) = nsites(it.nlist)
 
 """
 `nbodies(N, nlist::PairList)`

@@ -12,7 +12,7 @@ function lj_iter(nlist, V)
    for (i, _1, r, _2) in pairs(nlist)
       Es[i] += V(r)
    end
-   dE = zeros(typeof(nlist.R[1]), nsites(nlist))
+   dE = zeros(eltype(nlist.R), nsites(nlist))
    for (i, j, r, R) in pairs(nlist)
       dV = (@D V(r)) * (R/r)
       dE[j] += dV
@@ -23,16 +23,16 @@ end
 
 
 function lj_mapreduce{T}(nlist::PairList{T}, V)
-   Es = mapreduce_sym!( (r,R) -> V(r), zeros(T, nsites(nlist)),
+   Es = maptosites!( (r,R) -> V(r), zeros(T, nsites(nlist)),
                         pairs(nlist) )
-   dE = mapreduce_sym_d!((r,R) -> (@D V(r)), zeros(JVec{T}, nsites(nlist)),
+   dE = maptosites_d!((r,R) -> (@D V(r)), zeros(JVec{T}, nsites(nlist)),
                          pairs(nlist) )
 end
 
 function lj_nbody{T}(nlist::PairList{T}, V)
-   Es = mapreduce_sym!(r -> V(r[1]),  zeros(T, nsites(nlist)),
+   Es = maptosites!(r -> V(r[1]),  zeros(T, nsites(nlist)),
                       nbodies(2, nlist) )
-   dE = mapreduce_sym_d!(r -> (@D V(r[1])),  zeros(JVec{T}, nsites(nlist)),
+   dE = maptosites_d!(r -> (@D V(r[1])),  zeros(JVec{T}, nsites(nlist)),
                       nbodies(2, nlist) )
 end
 

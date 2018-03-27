@@ -52,7 +52,7 @@ n_body(X, f, M, rcut, C,
    n_body(f, M, nlist)
 
 n_body(f, M, nlist::PairList) =
-   NeighbourLists.mapreduce_sym!(f, zeros(nsites(nlist)),
+   NeighbourLists.maptosites!(f, zeros(nsites(nlist)),
                                  NeighbourLists.nbodies(M, nlist)) |> sum
 
 grad_n_body(X, df, M, rcut, C,
@@ -60,5 +60,5 @@ grad_n_body(X, df, M, rcut, C,
    grad_n_body(df, M, nlist)
 
 grad_n_body(df, M, nlist::PairList) =
-   NeighbourLists.mapreduce_sym_d!(df, zeros(SVec{Float64}, nsites(nlist)),
+   NeighbourLists.maptosites_d!(df, zeros(SVec{Float64}, nsites(nlist)),
                                   NeighbourLists.nbodies(M, nlist))

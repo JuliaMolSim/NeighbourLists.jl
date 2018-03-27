@@ -1,38 +1,46 @@
 
 using Base.Threads
 
-import Base.map!
+export maptosites!, maptosites_d!,
 
-export mapreduce!, mapreduce_sym!, mapreduce_antisym!, map_d!,
-   mapreduce_d!, mapreduce_sym_d!
 
-function mt_split(niter::TI, maxthreads=1_000_000_000) where TI
+function mt_split(niter::TI, maxthreads=1_000_000) where TI
    nt = minimum([maxthreads, nthreads(), niter])
    nn = ceil.(TI, linspace(1, niter+1, nt+1))
    rgs = [nn[i]:(nn[i+1]-1) for i = 1:nt]
    return nt, rgs
 end
 
-function mt_split_interlaced(niter::TI, maxthreads=1_000_000_000) where TI
+function mt_split_interlaced(niter::TI, maxthreads=1_000_000) where TI
    nt = minimum([maxthreads, nthreads(), niter])
    rgs = [ j:nt:niter for j = 1:nt ]
    return nt, rgs
 end
 
 
-# """
-# mapreduce!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})
-#
-# basically a bin_sum, iterate over all pairs, for each pair evaluate
-# f(r, R) and add it to out[i] (the first)
-# """
-# function mapreduce!{S, T}(out::AbstractVector{S}, f, it::PairIterator{T})
-#    nlist = it.nlist
-#    for n = 1:npairs(nlist)
-#       out[nlist.i[n]] += f(nlist.r[n], nlist.R[n])
-#    end
-#    return out
-# end
+function _mt_map_!(f, out, it, distributor)
+   nt, rg = mt_split(length(it))
+   if nt == 1
+      distributor(f, out, it, 1:length(it))
+   else
+      out_i = [ zeros(eltype(out), length(out)) for i=1:nt]
+      @threads for i = 1:nt
+         distributor(f, out_i[i], it, rg[i])
+      end
+      for i = 1:nt
+         out .+= out_i[i]
+      end
+   end
+   return out
+end
+
+maptosites!(f, out::AbstractVector, it::AbstractIterator) =
+   _mt_map_!(f, out, it, maptosites_inner!)
+
+maptosites_d!(f, out::AbstractVector, it::AbstractIterator) =
+   _mt_map_!(f, out, it, maptosites_d_inner!)
+
+# ============ assembly over pairs
 
 
 """
@@ -41,10 +49,10 @@ end
 symmetric variant of `mapreduce!{S, T}(out::AbstractVector{S}, ...)`, summing only
 over bonds (i,j) with i < j and adding f(R_ij) to both sites i, j.
 """
-function mapreduce_sym!{S, T}(f, out::AbstractVector{S}, it::PairIterator{T})
+function maptosites_inner!(f, out, it::PairIterator, rg)
    nlist = it.nlist
-   for n = 1:npairs(nlist)
-      if  nlist.i[n] < nlist.j[n]    # NB this probably prevents simd
+   for n in rg
+      if  nlist.i[n] < nlist.j[n]
          f_ = f(nlist.r[n], nlist.R[n])
          out[nlist.i[n]] += f_
          out[nlist.j[n]] += f_
@@ -61,9 +69,9 @@ anti-symmetric variant of `mapreduce!{S, T}(out::AbstractVector{S}, ...)`, summi
 over bonds (i,j) with i < j and adding f(R_ij) to site j and
 -f(R_ij) to site i.
 """
-function mapreduce_sym_d!{S, T}(f, out::AbstractVector{S}, it::PairIterator{T})
+function maptosites_d_inner!(f, out, it::PairIterator, rg)
    nlist = it.nlist
-   for n = 1:npairs(nlist)
+   for n in rg
       if nlist.i[n] < nlist.j[n]
          f_ = f(nlist.r[n], nlist.R[n])
          out[nlist.j[n]] += f_
@@ -76,28 +84,20 @@ end
 
 # ============ assembly over sites
 
-function map!{S,T}(f, out::AbstractVector{S}, it::SiteIterator{T})
-   nlist = it.nlist
-   nt, nn = mt_split(nsites(nlist))
-   for it = 1:nt
-      for i = nn[it]:(nn[it+1]-1)
-         j, r, R = site(nlist, i)
-         out[i] = f(r, R)
-      end
+function maptosites_inner!(f, out, it::SiteIterator, rg)
+   for i in rg
+      j, r, R = site(nlist, i)
+      out[i] = f(r, R)
    end
    return out
 end
 
-function map_d!{S,T}(f, out::AbstractVector{S}, it::SiteIterator{T})
-   nlist = it.nlist
-   nt, nn = mt_split(nsites(nlist))
-   for it = 1:nt
-      for i = nn[it]:(nn[it+1]-1)
-         j, r, R = site(nlist, i)
-         f_ = f(r, R)
-         out[j] += f_
-         out[i] -= sum(f_)
-      end
+function maptosites_d_inner!(f, out, it::SiteIterator)
+   for i in rg
+      j, r, R = site(nlist, i)
+      f_ = f(r, R)
+      out[j] += f_
+      out[i] -= sum(f_)
    end
    return out
 end
@@ -165,7 +165,7 @@ end
 return the first index `first[n] <= m < first[n+1]` such that `j[m] > n`;
 and returns 0 if no such index exists
 """
-function _find_next_{TI}(j::Vector{TI}, n::TI, first::Vector{TI})
+function _find_next_(j::Vector{TI}, n::TI, first::Vector{TI}) where TI
    # DEBUG CODE
    # @assert issorted(j[first[n]:first[n+1]-1])
    for m = first[n]:first[n+1]-1
@@ -199,7 +199,7 @@ function simplex_lengths!(s, a, b, i, J::SVector{N, TI}, nlist
 end
 
 
-@generated function mr_sym_inner!(f, out::AbstractVector,
+@generated function maptosites_inner!(f, out::AbstractVector,
          it::NBodyIterator{N, T, TI}, rg) where {N, T, TI}
    N2 = (N*(N-1))÷2
    quote
@@ -229,25 +229,9 @@ end
    end
 end
 
-function mapreduce_sym!(
-         f, out::Vector{S}, it::NBodyIterator{N, T, TI}) where {S, N, T, TI}
-   nt, rg = mt_split(nsites(it.nlist))
-   if nt == 1
-      mr_sym_inner!(f, out, it, 1:length(out))
-   else
-      out_i = [zeros(S, length(out)) for i=1:nt]
-      @threads for i = 1:nt
-         mr_sym_inner!(f, out_i[i], it, rg[i])
-      end
-      for i = 1:nt
-         out .+= out_i[i]
-      end
-   end
-   return out
-end
 
 
-@generated function mr_sym_d_inner!(df, out::AbstractVector,
+@generated function maptosites_d_inner!(df, out::AbstractVector,
          it::NBodyIterator{N, T, TI}, rg) where {N, T, TI}
    N2 = (N*(N-1))÷2
    quote
@@ -277,21 +261,4 @@ end
          end
       end
    end
-end
-
-function mapreduce_sym_d!(
-         df, out::Vector{S}, it::NBodyIterator{N, T, TI}) where {S, N, T, TI}
-   nt, rg = mt_split(nsites(it.nlist))
-   if nt == 1
-      mr_sym_d_inner!(df, out, it, 1:length(out))
-   else
-      out_i = [zeros(S, length(out)) for i=1:nt]
-      @threads for i = 1:nt
-         mr_sym_d_inner!(df, out_i[i], it, rg[i])
-      end
-      for i = 1:nt
-         out .+= out_i[i]
-      end
-   end
-   return out
 end
