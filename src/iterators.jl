@@ -1,7 +1,7 @@
 
 import Base: start, done, next, length
 
-export pairs, sites, site
+export pairs, sites, site, nbodies
 
 inc{T <: Integer}(i::T) = i + T(1)
 
@@ -37,3 +37,22 @@ start{T,TI}(it::SiteIterator{T,TI}) = one(TI)
 done(it::SiteIterator, i::Integer) = (i > nsites(it.nlist))
 next(it::SiteIterator, i::Integer) = (i, site(it.nlist, i)...), inc(i)
 length(it::SiteIterator) = nsites(it.nlist)
+
+
+# -------------- iterator over n-body terms ---------------
+
+
+struct NBodyIterator{N, T, TI}
+   nlist::PairList{T,TI}
+   order::Val{N}
+end
+
+
+"""
+`nbodies(N, nlist::PairList)`
+
+creates an N-body iterator, e.g., `nbodies(3, nlist)` will create an iterator
+over permutation-symmetric 3-body terms. Use `mapreduce_sym!`
+and `map_reduce_sym_d!` to carry out the iterations.
+"""
+nbodies(N::Integer, nlist::PairList) = NBodyIterator(nlist, Val(N))

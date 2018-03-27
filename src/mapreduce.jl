@@ -9,13 +9,14 @@ export mapreduce!, mapreduce_sym!, mapreduce_antisym!, map_d!,
 function mt_split(niter::TI, maxthreads=1_000_000_000) where TI
    nt = minimum([maxthreads, nthreads(), niter])
    nn = ceil.(TI, linspace(1, niter+1, nt+1))
-   return nt, nn
+   rgs = [nn[i]:(nn[i+1]-1) for i = 1:nt]
+   return nt, rgs
 end
 
 function mt_split_interlaced(niter::TI, maxthreads=1_000_000_000) where TI
    nt = minimum([maxthreads, nthreads(), niter])
-   nn = [ j:nt:niter for j = 1:nt ]
-   return nt, nn
+   rgs = [ j:nt:niter for j = 1:nt ]
+   return nt, rgs
 end
 
 
@@ -155,20 +156,6 @@ macro symm(N, ex)
 end
 
 
-struct NBodyIterator{N, T, TI}
-   nlist::PairList{T,TI}
-   order::Val{N}
-end
-
-
-"""
-`nbodies(N, nlist::PairList)`
-
-creates an N-body iterator, e.g., `nbodies(3, nlist)` will create an iterator
-over 3-body terms. Use `mapreduce_sym!` and `map_reduce_sym_d!` to carry out the
-iterations.
-"""
-nbodies(N, nlist::PairList) = NBodyIterator(nlist, Val(N))
 
 
 """
@@ -247,13 +234,13 @@ end
 
 function mapreduce_sym!(
          f, out::Vector{S}, it::NBodyIterator{N, T, TI}) where {S, N, T, TI}
-   nt, nn = mt_split(nsites(it.nlist))
+   nt, rg = mt_split(nsites(it.nlist))
    if nt == 1
       mr_sym_inner!(f, out, it, 1:length(out))
    else
       out_i = [zeros(S, length(out)) for i=1:nt]
       @threads for i = 1:nt
-         mr_sym_inner!(f, out_i[i], it, nn[i]:(nn[i+1]-1))
+         mr_sym_inner!(f, out_i[i], it, rg[i])
       end
       for i = 1:nt
          out .+= out_i[i]
@@ -297,13 +284,13 @@ end
 
 function mapreduce_sym_d!(
          df, out::Vector{S}, it::NBodyIterator{N, T, TI}) where {S, N, T, TI}
-   nt, nn = mt_split(nsites(it.nlist))
+   nt, rg = mt_split(nsites(it.nlist))
    if nt == 1
       mr_sym_d_inner!(df, out, it, 1:length(out))
    else
       out_i = [zeros(S, length(out)) for i=1:nt]
       @threads for i = 1:nt
-         mr_sym_d_inner!(df, out_i[i], it, nn[i]:(nn[i+1]-1))
+         mr_sym_d_inner!(df, out_i[i], it, rg[i])
       end
       for i = 1:nt
          out .+= out_i[i]
