@@ -1,7 +1,7 @@
 
 using Base.Threads
 
-export maptosites!, maptosites_d!,
+export maptosites!, maptosites_d!
 
 
 function mt_split(niter::TI, maxthreads=1_000_000) where TI
@@ -19,7 +19,7 @@ end
 
 
 function _mt_map_!(f, out, it, distributor)
-   nt, rg = mt_split(length(it))
+   nt, rg = mt_split_interlaced(length(it))
    if nt == 1
       distributor(f, out, it, 1:length(it))
    else
