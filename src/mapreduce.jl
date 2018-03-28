@@ -18,14 +18,14 @@ function mt_split_interlaced(niter::TI, maxthreads=1_000_000) where TI
 end
 
 
-function _mt_map_!(f, out, it, distributor)
+function _mt_map_!(f, out, it, inner_loop)
    nt, rg = mt_split_interlaced(length(it))
    if nt == 1
-      distributor(f, out, it, 1:length(it))
+      inner_loop(f, out, it, 1:length(it))
    else
       out_i = [ zeros(eltype(out), length(out)) for i=1:nt]
       @threads for i = 1:nt
-         distributor(f, out_i[i], it, rg[i])
+         inner_loop(f, out_i[i], it, rg[i])
       end
       for i = 1:nt
          out .+= out_i[i]
@@ -53,7 +53,7 @@ function maptosites_inner!(f, out, it::PairIterator, rg)
    nlist = it.nlist
    for n in rg
       if  nlist.i[n] < nlist.j[n]
-         f_ = f(nlist.r[n], nlist.R[n])
+         f_ = f(nlist.r[n], nlist.R[n]) / 2
          out[nlist.i[n]] += f_
          out[nlist.j[n]] += f_
       end
@@ -92,7 +92,7 @@ function maptosites_inner!(f, out, it::SiteIterator, rg)
    return out
 end
 
-function maptosites_d_inner!(f, out, it::SiteIterator)
+function maptosites_d_inner!(df, out, it::SiteIterator)
    for i in rg
       j, r, R = site(nlist, i)
       f_ = f(r, R)
@@ -135,6 +135,9 @@ macro symm(N, ex)
    a0 = ex_for.args[2].args[1]
    a1 = ex_for.args[2].args[2]
    # create the for-loop without body
+   #   for i1 = a0:a1-2, i2 = i1+1:a1-1, i3 = i2+1:a1
+   #      do something with (i1, i2, i3)
+   #   end
    loopstr = "for $(i)1 = ($a0):(($a1)-$(N-1))"
    for n = 2:N
       loopstr *= ", $i$n = $i$(n-1)+1:(($a1)-$(N-n))"
@@ -200,7 +203,7 @@ end
 
 
 @generated function maptosites_inner!(f, out::AbstractVector,
-         it::NBodyIterator{N, T, TI}, rg) where {N, T, TI}
+                              it::NBodyIterator{N, T, TI}, rg) where {N, T, TI}
    N2 = (N*(N-1))÷2
    quote
       nlist = it.nlist
