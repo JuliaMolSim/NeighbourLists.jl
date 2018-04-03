@@ -90,18 +90,18 @@ end
 
 function maptosites_inner!(f::FT, out, it::SiteIterator, rg) where FT
    for i in rg
-      j, r, R = site(nlist, i)
+      j, r, R = site(it.nlist, i)
       out[i] = f(r, R)
    end
    return out
 end
 
-function maptosites_d_inner!(df::FT, out, it::SiteIterator) where FT
+function maptosites_d_inner!(df::FT, out, it::SiteIterator, rg) where FT
    for i in rg
-      j, r, R = site(nlist, i)
-      f_ = f(r, R)
-      out[j] += f_
-      out[i] -= sum(f_)
+      j, r, R = site(it.nlist, i)
+      df_ = df(r, R)
+      out[j] += df_
+      out[i] -= sum(df_)
    end
    return out
 end
