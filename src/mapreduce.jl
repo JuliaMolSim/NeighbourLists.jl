@@ -3,22 +3,26 @@ using Base.Threads
 
 export maptosites!, maptosites_d!
 
+const MAX_THREADS = 1_000_000
+function set_maxthreads!(n)
+   NeighbourLists.MAX_THREADS = n
+end
 
-function mt_split(niter::TI, maxthreads=1_000_000) where TI
+function mt_split(niter::TI, maxthreads=MAX_THREADS) where TI
    nt = minimum([maxthreads, nthreads(), niter])
    nn = ceil.(TI, linspace(1, niter+1, nt+1))
    rgs = [nn[i]:(nn[i+1]-1) for i = 1:nt]
    return nt, rgs
 end
 
-function mt_split_interlaced(niter::TI, maxthreads=1_000_000) where TI
+function mt_split_interlaced(niter::TI, maxthreads=MAX_THREADS) where TI
    nt = minimum([maxthreads, nthreads(), niter])
    rgs = [ j:nt:niter for j = 1:nt ]
    return nt, rgs
 end
 
 
-function _mt_map_!(f, out, it, inner_loop)
+function _mt_map_!(f::FT, out, it, inner_loop) where FT
    nt, rg = mt_split_interlaced(length(it))
    if nt == 1
       inner_loop(f, out, it, 1:length(it))
@@ -49,7 +53,7 @@ maptosites_d!(f, out::AbstractVector, it::AbstractIterator) =
 symmetric variant of `mapreduce!{S, T}(out::AbstractVector{S}, ...)`, summing only
 over bonds (i,j) with i < j and adding f(R_ij) to both sites i, j.
 """
-function maptosites_inner!(f, out, it::PairIterator, rg)
+function maptosites_inner!(f::FT, out, it::PairIterator, rg) where FT
    nlist = it.nlist
    for n in rg
       if  nlist.i[n] < nlist.j[n]
@@ -69,7 +73,7 @@ anti-symmetric variant of `mapreduce!{S, T}(out::AbstractVector{S}, ...)`, summi
 over bonds (i,j) with i < j and adding f(R_ij) to site j and
 -f(R_ij) to site i.
 """
-function maptosites_d_inner!(f, out, it::PairIterator, rg)
+function maptosites_d_inner!(f::FT, out, it::PairIterator, rg) where FT
    nlist = it.nlist
    for n in rg
       if nlist.i[n] < nlist.j[n]
@@ -84,7 +88,7 @@ end
 
 # ============ assembly over sites
 
-function maptosites_inner!(f, out, it::SiteIterator, rg)
+function maptosites_inner!(f::FT, out, it::SiteIterator, rg) where FT
    for i in rg
       j, r, R = site(nlist, i)
       out[i] = f(r, R)
@@ -92,7 +96,7 @@ function maptosites_inner!(f, out, it::SiteIterator, rg)
    return out
 end
 
-function maptosites_d_inner!(df, out, it::SiteIterator)
+function maptosites_d_inner!(df::FT, out, it::SiteIterator) where FT
    for i in rg
       j, r, R = site(nlist, i)
       f_ = f(r, R)
@@ -134,7 +138,7 @@ macro symm(N, ex)
    # lower and upper bound
    a0 = ex_for.args[2].args[1]
    a1 = ex_for.args[2].args[2]
-   # create the for-loop without body
+   # create the for-loop without body, e.g., for a 3-body assembly it generates
    #   for i1 = a0:a1-2, i2 = i1+1:a1-1, i3 = i2+1:a1
    #      do something with (i1, i2, i3)
    #   end
@@ -202,8 +206,8 @@ function simplex_lengths!(s, a, b, i, J::SVector{N, TI}, nlist
 end
 
 
-@generated function maptosites_inner!(f, out::AbstractVector,
-                              it::NBodyIterator{N, T, TI}, rg) where {N, T, TI}
+@generated function maptosites_inner!(f::FT, out::AbstractVector,
+                        it::NBodyIterator{N, T, TI}, rg) where {FT, N, T, TI}
    N2 = (N*(N-1))÷2
    quote
       nlist = it.nlist
@@ -234,8 +238,8 @@ end
 
 
 
-@generated function maptosites_d_inner!(df, out::AbstractVector,
-         it::NBodyIterator{N, T, TI}, rg) where {N, T, TI}
+@generated function maptosites_d_inner!(df::FT, out::AbstractVector,
+                        it::NBodyIterator{N, T, TI}, rg) where {FT, N, T, TI}
    N2 = (N*(N-1))÷2
    quote
       nlist = it.nlist
