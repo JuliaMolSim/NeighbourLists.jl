@@ -5,6 +5,8 @@ using NeighbourLists: SMat, SVec
 using Base.Test, StaticArrays, ForwardDiff
 
 # ------ generate random configurations -------
+
+
 function rand_config(N)
    C = SMat( diagm(2.0 + 0.2 * rand(3)) * N )
    X = [ C' * rand(SVec)   for i = 1:ceil(Int, abs(det(C))) ÷ 4 + 2 ]
@@ -47,16 +49,16 @@ end
 
 # global assembly of n-body energies and forces
 
-n_body(X, f, M, rcut, C,
-      nlist = PairList(X, rcut, C, (false, false, false), sorted = true)) =
+n_body(X, f, M, rcut, C, pbc = (false, false, false),
+            nlist = PairList(X, rcut, C, pbc, sorted = true)) =
    n_body(f, M, nlist)
 
 n_body(f, M, nlist::PairList) =
    NeighbourLists.maptosites!(f, zeros(nsites(nlist)),
                                  NeighbourLists.nbodies(M, nlist)) |> sum
 
-grad_n_body(X, df, M, rcut, C,
-      nlist = PairList(X, rcut, C, (false, false, false), sorted = true)) =
+grad_n_body(X, df, M, rcut, C, pbc = (false, false, false),
+            nlist = PairList(X, rcut, C, pbc, sorted = true)) =
    grad_n_body(df, M, nlist)
 
 grad_n_body(df, M, nlist::PairList) =

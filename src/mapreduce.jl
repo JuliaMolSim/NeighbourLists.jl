@@ -23,7 +23,7 @@ end
 
 
 function _mt_map_!(f::FT, out, it, inner_loop) where FT
-   nt, rg = mt_split_interlaced(length(it))
+   nt, rg = mt_split(length(it))
    if nt == 1
       inner_loop(f, out, it, 1:length(it))
    else
@@ -88,20 +88,25 @@ end
 
 # ============ assembly over sites
 
-function maptosites_inner!(f::FT, out, it::SiteIterator, rg) where FT
-   for i in rg
-      j, r, R = site(it.nlist, i)
+function maptosites!(f::FT, out::AbstractVector, it::SiteIterator) where FT
+   @threads for i = 1:nsites(it.nlist)
+      _, r, R = site(it.nlist, i)
       out[i] = f(r, R)
    end
    return out
 end
 
-function maptosites_d_inner!(df::FT, out, it::SiteIterator, rg) where FT
-   for i in rg
+function maptosites_d!(df::FT, out::AbstractVector, it::SiteIterator) where FT
+   nt = nthreads()
+   OUT = [out; [zeros(out) for n = 2:nt]]
+   @threads for i = 1:nsites(it.nlist)
       j, r, R = site(it.nlist, i)
       df_ = df(r, R)
-      out[j] += df_
-      out[i] -= sum(df_)
+      OUT[threadid()][j] += df_
+      OUT[threadid()][i] -= sum(df_)
+   end
+   for it = 2:n
+      out .+= OUT[it]
    end
    return out
 end
@@ -187,7 +192,7 @@ end
 `simplex_lengths`: compute the sidelengths of a simplex
 and return the corresponding pairs of X indices
 """
-function simplex_lengths!(s, a, b, i, J::SVector{N, TI}, nlist
+function simplex_lengths!(s, S, a, b, i, J::SVector{N, TI}, nlist
                            ) where {N, TI <: Integer}
    n = 0
    for l = 1:N
@@ -195,14 +200,17 @@ function simplex_lengths!(s, a, b, i, J::SVector{N, TI}, nlist
       a[n] = i
       b[n] = nlist.j[J[l]]
       s[n] = nlist.r[J[l]]
+      S[n] = - nlist.R[J[l]] / s[n]  # Rab
    end
    for i1 = 1:N-1, j1 = i1+1:N
       n += 1
       a[n] = nlist.j[J[i1]]
       b[n] = nlist.j[J[j1]]
-      s[n] = norm(nlist.R[J[i1]] - nlist.R[J[j1]])
+      Rab = nlist.R[J[i1]] - nlist.R[J[j1]]
+      s[n] = norm(Rab)
+      S[n] = Rab / s[n]
    end
-   return SVector(s), SVector(a), SVector(b)
+   return SVector(s), SVector(S), SVector(a), SVector(b)
 end
 
 
@@ -215,6 +223,7 @@ end
       a_ = zero(MVector{$N2, TI})
       b_ = zero(MVector{$N2, TI})
       s_ = zero(MVector{$N2, T})
+      S_ = zero(MVector{$N2, SVec{T}})
       # loop over the range allocated to this thread
       for i in rg
          # get the index of a neighbour > n
@@ -224,7 +233,7 @@ end
          a1 = nlist.first[i+1]-1
          @symm $(N-1) for J = a0:a1
             # compute the N(N+1)/2 vector of distances
-            s, _, _ = simplex_lengths!(s_, a_, b_, i, J, nlist)
+            s, _, _, _ = simplex_lengths!(s_, S_, a_, b_, i, J, nlist)
          #                        ~~~~~~~~~~~~~~~~~~~ generic up to here
             f_ = f(s) / $N
             out[i] += f_
@@ -247,6 +256,7 @@ end
       a_ = zero(MVector{$N2, TI})
       b_ = zero(MVector{$N2, TI})
       s_ = zero(MVector{$N2, T})
+      S_ = zero(MVector{$N2, SVec{T}})
       # loop over the range allocated to this thread
       for i in rg
          # get the index of a neighbour > n
@@ -256,14 +266,12 @@ end
          a1 = nlist.first[i+1]-1
          @symm $(N-1) for J = a0:a1
             # compute the N(N+1)/2 vector of distances
-            s, a, b = simplex_lengths!(s_, a_, b_, i, J, nlist)
+            s, S, a, b = simplex_lengths!(s_, S_, a_, b_, i, J, nlist)
          #                        ~~~~~~~~~~~~~~~~~~~ generic up to here
             df_ = df(s)
             for l = 1:length(s)
-               Rab = nlist.X[a[l]] - nlist.X[b[l]]
-               Sab = Rab / norm(Rab)
-               out[a[l]] += df_[l] * Sab
-               out[b[l]] -= df_[l] * Sab
+               out[a[l]] += df_[l] * S[l]
+               out[b[l]] -= df_[l] * S[l]
             end
          end
       end

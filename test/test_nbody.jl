@@ -4,7 +4,7 @@ using Base.Test
 # uncomment for testing from editor/file
 # include("test_aux.jl")
 
-let rcut = 2.5
+let rcut = 3.0
 
 fn, fn_d = gen_fnbody(rcut)
 
@@ -40,37 +40,41 @@ mat{T}(V::Vector{SVector{3,T}}) = reinterpret(T, V, (3, length(V)))
 # end
 
 
-println("--------------------------------------")
-println("    Testing NBodyIterator")
-println("--------------------------------------")
-println("Check that the energy is consistent with a naive implementation")
-MM = [2,2,3,3,3,4,4,5]  # body orders
-println("   N     Nat    =>   |Emr-Enaive|")
-for M in MM
-   # create a not-too-large copper cell
-   X, C, _ = rand_config(2)
-   nat = length(X)
-
-   # assemble energy via neighbourlist and map-reduce
-   Emr = n_body(X, fn, M, rcut, C)
-   # assemble energy naively
-   Enaive = naive_n_body(X, fn, M, rcut)
-
-   println("   $M      $nat    =>   $(abs(Emr - Enaive))")
-   @test Emr ≈ Enaive
-end
-
+# println("--------------------------------------")
+# println("    Testing NBodyIterator")
+# println("--------------------------------------")
+# println("Check that the energy is consistent with a naive implementation")
+# MM = [2,2,3,3,3,4,4,5]  # body orders
+# println("   N     Nat    =>   |Emr-Enaive|")
+# for M in MM
+#    # create a not-too-large copper cell
+#    X, C, _ = rand_config(2)
+#    nat = length(X)
+#
+#    # assemble energy via neighbourlist and map-reduce
+#    Emr = n_body(X, fn, M, rcut, C)
+#    # assemble energy naively
+#    Enaive = naive_n_body(X, fn, M, rcut)
+#
+#    println("   $M      $nat    =>   $(abs(Emr - Enaive))")
+#    @test Emr ≈ Enaive
+# end
+#
 
 println("--------------------------------------")
 println("Finite-difference tests")
 MM = [2,3,4,5]  # body orders
 for M in MM
    println(" [M = $M]")
-   X, C, _ = rand_config(2)
+   X, C, pbc = rand_config(2)
+   if M > 3
+      pbc = [false, false, false]
+   end
+   @show pbc
    nat = length(X)
-   dE = grad_n_body(X, fn_d, M, rcut, C)
+   dE = grad_n_body(X, fn_d, M, rcut, C, pbc)
    dE = mat(dE)[:]
-   E = n_body(X, fn, M, rcut, C)
+   E = n_body(X, fn, M, rcut, C, pbc)
    @printf("    h    | error \n")
    @printf("---------|----------- \n")
    x = mat(X)[:]
@@ -80,7 +84,7 @@ for M in MM
       dEh = copy(dE)
       for n = 1:length(dE)
          x[n] += h
-         dEh[n] = (n_body(vecs(x), fn, M, rcut, C) - E) / h
+         dEh[n] = (n_body(vecs(x), fn, M, rcut, C, pbc) - E) / h
          x[n] -= h
       end
       push!(errors, vecnorm(dE - dEh, Inf))
