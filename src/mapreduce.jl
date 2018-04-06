@@ -213,43 +213,30 @@ function simplex_lengths!(s, S, a, b, i, J::SVector{N, TI}, nlist
    return SVector(s), SVector(S), SVector(a), SVector(b)
 end
 
-
-@generated function maptosites_inner!(f::FT, out::AbstractVector,
-                        it::NBodyIterator{N, T, TI}, rg) where {FT, N, T, TI}
+@generated function _m2s_generic_!(f::FT, out::AbstractVector,
+                        it::NBodyIterator{N, T, TI}, rg,
+                        forgrad::Val{FG}) where {FT, N, T, TI, FG}
    N2 = (N*(N-1))÷2
-   quote
-      nlist = it.nlist
-      # allocate some temporary arrays
-      a_ = zero(MVector{$N2, TI})
-      b_ = zero(MVector{$N2, TI})
-      s_ = zero(MVector{$N2, T})
-      S_ = zero(MVector{$N2, SVec{T}})
-      # loop over the range allocated to this thread
-      for i in rg
-         # get the index of a neighbour > n
-         a0 = _find_next_(nlist.j, i, nlist.first)
-         a0 == 0 && continue  # (if no such index exists)
-         # get the index up to which to loop
-         a1 = nlist.first[i+1]-1
-         @symm $(N-1) for J = a0:a1
-            # compute the N(N+1)/2 vector of distances
-            s, _, _, _ = simplex_lengths!(s_, S_, a_, b_, i, J, nlist)
-         #                        ~~~~~~~~~~~~~~~~~~~ generic up to here
-            f_ = f(s) / $N
-            out[i] += f_
-            for l = 1:length(J)
-               out[nlist.j[J[l]]] += f_
-            end
+   if FG == :F
+      mapcode = quote
+         f_ = f(s) / $N
+         out[i] += f_
+         for l = 1:length(J)
+            out[nlist.j[J[l]]] += f_
          end
       end
+   elseif FG == :G
+      mapcode = quote
+         df_ = f(s)
+         for l = 1:length(s)
+            out[a[l]] += df_[l] * S[l]
+            out[b[l]] -= df_[l] * S[l]
+         end
+      end
+   else
+      error("unknown `FG`")
    end
-end
 
-
-
-@generated function maptosites_d_inner!(df::FT, out::AbstractVector,
-                        it::NBodyIterator{N, T, TI}, rg) where {FT, N, T, TI}
-   N2 = (N*(N-1))÷2
    quote
       nlist = it.nlist
       # allocate some temporary arrays
@@ -267,13 +254,15 @@ end
          @symm $(N-1) for J = a0:a1
             # compute the N(N+1)/2 vector of distances
             s, S, a, b = simplex_lengths!(s_, S_, a_, b_, i, J, nlist)
-         #                        ~~~~~~~~~~~~~~~~~~~ generic up to here
-            df_ = df(s)
-            for l = 1:length(s)
-               out[a[l]] += df_[l] * S[l]
-               out[b[l]] -= df_[l] * S[l]
-            end
+            $mapcode
          end
       end
    end
 end
+
+
+maptosites_inner!(f::FT, out, it::NBodyIterator{N}, rg) where {FT, N} =
+      _m2s_generic_!(f, out, it, rg, Val(:F))
+
+maptosites_d_inner!(f::FT, out, it::NBodyIterator, rg) where {FT} =
+      _m2s_generic_!(f, out, it, rg, Val(:G))
