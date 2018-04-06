@@ -27,12 +27,12 @@ function _mt_map_!(f::FT, out, it, inner_loop) where FT
    if nt == 1
       inner_loop(f, out, it, 1:length(it))
    else
-      out_i = [ zeros(eltype(out), length(out)) for i=1:nt]
+      OUT = [[out]; [zeros(out) for i = 2:nt]]
       @threads for i = 1:nt
-         inner_loop(f, out_i[i], it, rg[i])
+         inner_loop(f, OUT[i], it, rg[i])
       end
-      for i = 1:nt
-         out .+= out_i[i]
+      for it = 2:nt
+         out .+= OUT[it]
       end
    end
    return out

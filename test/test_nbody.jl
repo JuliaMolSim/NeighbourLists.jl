@@ -40,26 +40,26 @@ mat{T}(V::Vector{SVector{3,T}}) = reinterpret(T, V, (3, length(V)))
 # end
 
 
-# println("--------------------------------------")
-# println("    Testing NBodyIterator")
-# println("--------------------------------------")
-# println("Check that the energy is consistent with a naive implementation")
-# MM = [2,2,3,3,3,4,4,5]  # body orders
-# println("   N     Nat    =>   |Emr-Enaive|")
-# for M in MM
-#    # create a not-too-large copper cell
-#    X, C, _ = rand_config(2)
-#    nat = length(X)
-#
-#    # assemble energy via neighbourlist and map-reduce
-#    Emr = n_body(X, fn, M, rcut, C)
-#    # assemble energy naively
-#    Enaive = naive_n_body(X, fn, M, rcut)
-#
-#    println("   $M      $nat    =>   $(abs(Emr - Enaive))")
-#    @test Emr ≈ Enaive
-# end
-#
+println("--------------------------------------")
+println("    Testing NBodyIterator")
+println("--------------------------------------")
+println("Check that the energy is consistent with a naive implementation")
+MM = [2,2,3,3,3,4,4,5]  # body orders
+println("   N     Nat    =>   |Emr-Enaive|")
+for M in MM
+   # create a not-too-large copper cell
+   X, C, _ = rand_config(2)
+   nat = length(X)
+
+   # assemble energy via neighbourlist and map-reduce
+   Emr = n_body(X, fn, M, rcut, C)
+   # assemble energy naively
+   Enaive = naive_n_body(X, fn, M, rcut)
+
+   println("   $M      $nat    =>   $(abs(Emr - Enaive))")
+   @test Emr ≈ Enaive
+end
+
 
 println("--------------------------------------")
 println("Finite-difference tests")
