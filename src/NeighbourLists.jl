@@ -2,10 +2,8 @@
 __precompile__()
 module NeighbourLists
 
-const MAX_THREADS = 1   # temporarily hard-coded single thread!
-function set_maxthreads!(n)
-   NeighbourLists.MAX_THREADS = n
-end
+const MAX_THREADS = [1]   # temporarily hard-coded single thread!
+set_maxthreads!(n) = (NeighbourLists.MAX_THREADS[1] = n)
 
 
 include("types.jl")
