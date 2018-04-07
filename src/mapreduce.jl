@@ -3,10 +3,6 @@ using Base.Threads
 
 export maptosites!, maptosites_d!
 
-const MAX_THREADS = 1_000_000
-function set_maxthreads!(n)
-   NeighbourLists.MAX_THREADS = n
-end
 
 function mt_split(niter::TI, maxthreads=MAX_THREADS) where TI
    nt = minimum([maxthreads, nthreads(), niter])

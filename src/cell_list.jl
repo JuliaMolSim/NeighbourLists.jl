@@ -75,8 +75,8 @@ end
 
 # multi-threading setup
 
-function setup_mt(niter::TI) where TI
-   nt = minimum([6, nthreads(), ceil(TI, niter / 20)])
+function setup_mt(niter::TI, maxnt = MAX_THREADS) where TI
+   nt = minimum([6, nthreads(), ceil(TI, niter / 20), maxnt])
    nn = ceil.(TI, linspace(1, niter+1, nt+1))
    return nt, nn
 end
