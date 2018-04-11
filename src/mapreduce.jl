@@ -4,14 +4,14 @@ using Base.Threads
 export maptosites!, maptosites_d!
 
 
-function mt_split(niter::TI, maxthreads=MAX_THREADS) where TI
+function mt_split(niter::TI, maxthreads=MAX_THREADS[1]) where TI
    nt = minimum([maxthreads, nthreads(), niter])
    nn = ceil.(TI, linspace(1, niter+1, nt+1))
    rgs = [nn[i]:(nn[i+1]-1) for i = 1:nt]
    return nt, rgs
 end
 
-function mt_split_interlaced(niter::TI, maxthreads=MAX_THREADS) where TI
+function mt_split_interlaced(niter::TI, maxthreads=MAX_THREADS[1]) where TI
    nt = minimum([maxthreads, nthreads(), niter])
    rgs = [ j:nt:niter for j = 1:nt ]
    return nt, rgs
