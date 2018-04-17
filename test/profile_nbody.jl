@@ -23,3 +23,7 @@ for M in [2, 3, 4, 5]
    print("  forces: ")
    @btime grad_n_body($f_d, $M, $nlist)
 end
+
+
+lj = LennardJones(r0, 1.0) * C1Shift(cutoff)
+@btime forces($lj, $at)

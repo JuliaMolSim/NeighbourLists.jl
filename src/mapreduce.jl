@@ -250,7 +250,9 @@ end
          @symm $(N-1) for J = a0:a1
             # compute the N(N+1)/2 vector of distances
             s, S, a, b = simplex_lengths!(s_, S_, a_, b_, i, J, nlist)
-            $mapcode
+            if maximum(s) < nlist.cutoff
+               $mapcode
+            end
          end
       end
    end

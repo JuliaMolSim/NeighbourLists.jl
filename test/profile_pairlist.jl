@@ -18,12 +18,12 @@ end
 println("# Threads = ", Base.Threads.nthreads())
 
 println("Neighbourlist assembly benchmark")
-for L in [4, 10, 30]
+for L in [2, 4, 10, 30]
    print("L = $L")
    # si, non-cubic cell, mixed bc
    at = bulk(:Si, cubic=true) * L
    println(", N = $(length(at))")
-   set_pbc!(at, (true, false, true))
+   set_pbc!(at, (true, true, true))
    C = JMat(cell(at))
    X = positions(at)
    perbc = JVec(pbc(at))

@@ -45,7 +45,7 @@ r0 = rnn(:Fe)
 cutoff =  r0 * 2.7
 lj = LennardJones(r0, 1.0) * C1Shift(cutoff)
 
-for L in (5, 10, 20)
+for L in (2, 5, 10, 20)
    at = bulk(:Fe, cubic=true) * L
    println("Bulk Fe, Nat = $(length(at))")
    println("PairList construction:")
