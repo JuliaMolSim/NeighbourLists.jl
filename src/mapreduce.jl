@@ -209,11 +209,11 @@ function simplex_lengths!(s, S, a, b, i, J::SVector{N, TI}, nlist
    return SVector(s), SVector(S), SVector(a), SVector(b)
 end
 
-@generated function _m2s_generic_!(f::FT, out::AbstractVector,
+@generated function _m2s_generic_!(f::FT, out::AbstractArray,
                         it::NBodyIterator{N, T, TI}, rg,
                         forgrad::Val{FG}) where {FT, N, T, TI, FG}
    N2 = (N*(N-1))÷2
-   if FG == :F
+   if FG == :F   # energy
       mapcode = quote
          f_ = f(s) / $N
          out[i] += f_
@@ -221,12 +221,19 @@ end
             out[nlist.j[J[l]]] += f_
          end
       end
-   elseif FG == :G
+   elseif FG == :G  # gradient
       mapcode = quote
          df_ = f(s)
          for l = 1:length(s)
             out[a[l]] += df_[l] * S[l]
             out[b[l]] -= df_[l] * S[l]
+         end
+      end
+   elseif FG == :V   # virial (f = ∇Vn(r12, ...))
+      mapcode = quote
+         df_ = f(s)
+         for l = 1:length(s)
+            out[:, :] -= (s[l]*df_[l]) * (S[l] * S[l]')
          end
       end
    else
@@ -259,8 +266,11 @@ end
 end
 
 
-maptosites_inner!(f::FT, out, it::NBodyIterator{N}, rg) where {FT, N} =
+maptosites_inner!(f, out, it::NBodyIterator, rg) =
       _m2s_generic_!(f, out, it, rg, Val(:F))
 
-maptosites_d_inner!(f::FT, out, it::NBodyIterator, rg) where {FT} =
+maptosites_d_inner!(f, out, it::NBodyIterator, rg) =
       _m2s_generic_!(f, out, it, rg, Val(:G))
+
+virial!(f, out, it::NBodyIterator) =
+      _m2s_generic_!(f, out, it, 1:nsites(it.nlist), Val(:V))
