@@ -209,6 +209,10 @@ function simplex_lengths!(s, S, a, b, i, J::SVector{N, TI}, nlist
    return SVector(s), SVector(S), SVector(a), SVector(b)
 end
 
+_m2s_mul_(x::T, S::SVector{N,T}) where {N, T} = x * S
+_m2s_mul_(X::AbstractVector{T}, S::SVector{N,T}) where {N,T} = [x * S  for x in X]
+
+
 @generated function _m2s_generic_!(f::FT, out::AbstractArray,
                         it::NBodyIterator{N, T, TI}, rg,
                         forgrad::Val{FG}) where {FT, N, T, TI, FG}
@@ -225,8 +229,9 @@ end
       mapcode = quote
          df_ = f(s)
          for l = 1:length(s)
-            out[a[l]] += df_[l] * S[l]
-            out[b[l]] -= df_[l] * S[l]
+            _t = _m2s_mul_(df_[l], S[l])   # df_[l] * S[l]
+            out[a[l]] += _t
+            out[b[l]] -= _t
          end
       end
    elseif FG == :V   # virial (f = ∇Vn(r12, ...))
