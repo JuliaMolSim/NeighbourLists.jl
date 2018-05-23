@@ -3,9 +3,9 @@ using Base.Threads
 export npairs, nsites
 
 PairList{T}(X::Vector{SVec{T}}, cutoff::AbstractFloat, cell::AbstractMatrix, pbc;
-            int_type::Type = Int, store_first = true, sorted = true) =
+            int_type::Type = Int, store_first = true, sorted = true, fixcell = true) =
    _pairlist_(X, SMat{T}(cell), SVec{Bool}(pbc), T(cutoff), zero(int_type),
-              store_first, sorted)
+              store_first, sorted, fixcell)
 
 PairList{T}(X::Matrix{T}, args...; kwargs...) =
    PairList(reinterpret(SVec{T}, X, (size(X,2),)), args...; varargs...)
@@ -268,7 +268,12 @@ end
 
 
 function _pairlist_(X::Vector{SVec{T}}, cell::SMat{T}, pbc::SVec{Bool},
-            cutoff::T, _i::TI, store_first::Bool, sorted::Bool) where {T, TI}
+            cutoff::T, _i::TI, store_first::Bool, sorted::Bool, fixcell::Bool) where {T, TI}
+
+   # temporary (?) fix to make sure all atoms are within the cell
+   if fixcell
+      X, cell = _fix_cell_(X, cell, pbc)
+   end
 
    clist = _celllist_(X, cell, pbc, cutoff, _i)
    i, j, r, R = _pairlist_(clist)
@@ -345,4 +350,34 @@ function sort_neigs!(j, r, R, first)
          end
       end
    end
+end
+
+
+"""
+at the moment this just wraps PBC positions that lie outside the cell
+TODO: also do some magic for non-PB
+"""
+function _fix_cell_(X::Vector{SVec{T}}, C::SMat{T}, pbc) where {T}
+   invCt = inv(C)'
+   update_X = false
+   for (ix, x) in enumerate(X)
+      λ = Vector(invCt * x)
+      for i = 1:3
+         update_x = false
+         if !(0 <= λ[i] < 1.0)
+            if pbc[i]
+               λ[i] = mod(λ[i], 1.0)
+               update_x = true
+            else
+               warn("atoms outside cell")
+            end
+         end
+         if update_x
+            X[ix] = C' * SVec{T}(λ)
+            update_X = true
+         end
+      end
+   end
+   @show update_X
+   return X, C
 end
