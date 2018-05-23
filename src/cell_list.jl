@@ -378,6 +378,5 @@ function _fix_cell_(X::Vector{SVec{T}}, C::SMat{T}, pbc) where {T}
          end
       end
    end
-   @show update_X
    return X, C
 end
