@@ -210,7 +210,10 @@ function simplex_lengths!(s, S, a, b, i, J::SVector{N, TI}, nlist
 end
 
 _m2s_mul_(x::T, S::SVector{N,T}) where {N, T} = x * S
-_m2s_mul_(X::AbstractVector{T}, S::SVector{N,T}) where {N,T} = [x * S  for x in X]
+
+@inline function _inc_stress_!(out::MMatrix, s, df::Number, S)
+   out[:, :] -= (s * df) * (S * S')
+end
 
 
 @generated function _m2s_generic_!(f::FT, out::AbstractArray,
@@ -238,7 +241,8 @@ _m2s_mul_(X::AbstractVector{T}, S::SVector{N,T}) where {N,T} = [x * S  for x in 
       mapcode = quote
          df_ = f(s)
          for l = 1:length(s)
-            out[:, :] -= (s[l]*df_[l]) * (S[l] * S[l]')
+            # out[:, :] -= (s[l]*df_[l]) * (S[l] * S[l]')
+            _inc_stress_!(out, s[l], df_[l], S[l])
          end
       end
    else
