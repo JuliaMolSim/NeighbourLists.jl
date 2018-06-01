@@ -62,7 +62,7 @@ lengths{T}(C::SMat{T}) =
 
 function analyze_cell(cell, cutoff, _::TI) where TI
    # check the cell volume (allow only 3D volumes!)
-   volume = det(cell)
+   volume = abs(det(cell))
    @assert volume > 1e-12
    # precompute inverse of cell matrix for coordiate transformation
    inv_cell = inv(cell)
@@ -352,31 +352,64 @@ function sort_neigs!(j, r, R, first)
    end
 end
 
+"""
+`max_neigs(nlist::PairList) -> Integer`
+
+returns the maximum number of neighbours that any atom in the
+neighbourlist has.
+"""
+function max_neigs(nlist::PairList)
+      maximum( nlist.first[n+1]-nlist.first[n]
+               for n = 1:(length(nlist.first)-1) )
+end
 
 """
-at the moment this just wraps PBC positions that lie outside the cell
-TODO: also do some magic for non-PB
+`_fix_cell_(X::Vector{SVec{T}}, C::SMat{T}, pbc)`
+
+produces new `X`, `C` such that PBC are respected, but all positions are
+inside the cell. This Potentially involves
+ * wrapping atom positions in the pbc directions
+ * shifting atom positions in the non-pbc directions
+ * enlarging the cell
+If either `X` or `C` are modified, then they will be copied.
 """
 function _fix_cell_(X::Vector{SVec{T}}, C::SMat{T}, pbc) where {T}
    invCt = inv(C)'
-   update_X = false
+   copy_X = false
+   min_lam = @MVector zeros(3)
+   max_lam = @MVector ones(3)
    for (ix, x) in enumerate(X)
       λ = Vector(invCt * x)
       for i = 1:3
          update_x = false
-         if !(0 <= λ[i] < 1.0)
+         if !(0.0 <= λ[i] < 1.0)
             if pbc[i]
                λ[i] = mod(λ[i], 1.0)
                update_x = true
             else
-               warn("atoms outside cell")
+               min_lam[i] = min(min_lam[i], λ[i])
+               max_lam[i] = max(max_lam[i], λ[i])
             end
          end
          if update_x
+            if !copy_X; X = copy(X); copy_X = true end
             X[ix] = C' * SVec{T}(λ)
-            update_X = true
          end
       end
+   end
+   # check whether we need to adjust the non-PBC directions
+   if (minimum(min_lam) < 0.0) || (maximum(max_lam) > 1.0)
+      # shift vector:
+      if !copy_X; X = copy(X); copy_X = true end
+      t = - C' * min_lam
+      for n = 1:length(X)
+         X[n] += t
+      end
+      # the new min_lam is now zero and the new max_lam is max_lam - min_lam
+      max_lam -= min_lam
+      min_lam .= 0.0
+      # we need to multiply the cell by the correct lambda
+      C = hcat( max_lam[1] * C[1,:], max_lam[2] * C[2,:], max_lam[3] * C[3,:])'
    end
    return X, C
 end
