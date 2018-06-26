@@ -44,7 +44,7 @@ end
 "Map particle position to a (cartesian) cell index"
 @inline position_to_cell_index{T, TI <: Integer}(
                         inv_cell::SMat{T}, x::SVec{T}, ns::SVec{TI}) =
-   floor.(TI, ((inv_cell * x) .* ns + 1))
+   floor.(TI, ((inv_cell' * x) .* ns + 1))
 
 
 # ------------ The next two functions are the only dimension-dependent
@@ -163,7 +163,8 @@ function _pairlist_(clist::CellList{T, TI}) where {T, TI}
    end
 
    # We need the shape of the bin ( bins[:, i] = cell[i,:] / ns[i] )
-   bins = cell' ./ ns_vec
+   # bins = cell' ./ ns_vec
+   bins = hcat( cell[1,:]/ns_vec[1], cell[2,:]/ns_vec[2], cell[3,:] / ns_vec[3] )
 
    # Find out over how many neighbor cells we need to loop (if the box is small)
    nxyz = ceil.(TI, cutoff * (ns_vec ./ lens))
