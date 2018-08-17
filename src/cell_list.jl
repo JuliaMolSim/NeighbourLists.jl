@@ -67,7 +67,7 @@ function analyze_cell(cell, cutoff, _::TI) where TI
    # precompute inverse of cell matrix for coordiate transformation
    inv_cell = inv(cell)
    # Compute distance of cell faces
-   lens = lengths(cell)
+   lens = abs.(lengths(cell))
    # Number of cells for cell subdivision
    ns_vec = max.(floor.(TI, lens / cutoff), 1)
    return inv_cell, ns_vec, lens

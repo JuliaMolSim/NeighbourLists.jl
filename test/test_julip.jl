@@ -5,15 +5,16 @@ using Base.Test
 X_Ti = vecs([0.0 5.19374 2.59687 3.8953 1.29843 6.49217 7.7906 12.9843 10.3875 11.6859 9.08904 14.2828; 0.0 0.918131 1.83626 -1.11022e-16 0.918131 1.83626 -2.22045e-16 0.918131 1.83626 0.0 0.918131 1.83626; 0.0 0.0 0.0 2.24895 2.24895 2.24895 0.0 0.0 0.0 2.24895 2.24895 2.24895])
 C_Ti = (@SMatrix [15.5812 2.47895 0.0; 0.0 2.75439 0.0; 0.0 0.0 4.49791])
 
-# this is now completely meaningless, we need to switch this test to compare
-# against ASE / matscipy
+pynlist(at, cutoff) = ASE.matscipy_nlist(at, cutoff)
+jnlist(at, cutoff) = PairList(positions(at), cutoff, cell(at), pbc(at))
+
 function test_nlist_julip(at, cutoff)
-   nlist = PairList(positions(at), cutoff, cell(at), pbc(at))
-   py_nlist = ASE.matscipy_nlist(at, cutoff)
-   return ((nlist.i == py_nlist.i) &&
-           (nlist.j == py_nlist.j) &&
-           (nlist.r ≈ py_nlist.r) &&
-           (nlist.R ≈ py_nlist.R) )
+   nlist = jnlist(at, cutoff)
+   py_nlist = pynlist(at, cutoff)
+   return ( (nlist.i == py_nlist.i) &&
+            (nlist.j == py_nlist.j) &&
+            (nlist.r ≈ py_nlist.r) &&
+            (nlist.R ≈ py_nlist.R) )
 end
 
 
@@ -47,6 +48,31 @@ test_configs = [
     set_pbc!( bulk(:Ti) * 4, true ),
     2.3 * rnn(:Ti) ),
    ]
+
+
+# the test that failed during Cas' experiments
+X = [ 0.00000000e+00  0.00000000e+00  0.00000000e+00
+      1.92333044e+00  6.63816518e-17 -1.36000000e+00
+      1.92333044e+00  1.92333044e+00 -2.72000000e+00
+      3.84666089e+00  1.92333044e+00 -4.08000000e+00 ]'
+C = [ 3.84666089   0.           0.
+      0.           3.84666089   0.
+      0.           0.          -5.44 ]'
+
+# X = [ 0.00000000e+00  0.00000000e+00  0.00000000e+00
+#       1.92333044e+00  6.63816518e-17  1.36000000e+00
+#       1.92333044e+00  1.92333044e+00  2.72000000e+00
+#       3.84666089e+00  1.92333044e+00  4.08000000e+00 ]'
+# C = [ 3.84666089   0.           0.
+#       0.           3.84666089   0.
+#       0.           0.           5.44 ]'
+at = Atoms(:Si, vecs(X))
+set_cell!(at, C)
+set_pbc!(at, (true,true,true))
+atlge = at * (1,1,10)
+rcut = 2.3*rnn(:Si)
+push!(test_configs, ("Si left-oriented", at, rcut))
+push!(test_configs, ("Si left-oriented, large", atlge, rcut))
 
 println("JuLIP Configuration tests:")
 for (i, (descr, at, cutoff)) in enumerate(test_configs)
