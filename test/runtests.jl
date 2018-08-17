@@ -1,5 +1,5 @@
 using NeighbourLists
-using Base.Test
+using Test
 
 # ---- FLAGS -----
 

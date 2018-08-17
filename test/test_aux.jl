@@ -1,8 +1,8 @@
 # This file contains some code that is chared across several tests
 
-using StaticArrays, Base.Test, ForwardDiff
+using StaticArrays, Test, ForwardDiff
 using NeighbourLists: SMat, SVec
-using Base.Test, StaticArrays, ForwardDiff
+using Test, StaticArrays, ForwardDiff
 
 # ------ generate random configurations -------
 

@@ -5,7 +5,7 @@ export pairs, sites, site, nbodies
 
 abstract type AbstractIterator end
 
-inc{T <: Integer}(i::T) = i + T(1)
+inc(i::T) where {T <: Integer} = i + T(1)
 
 # -------------- iterator over pairs ---------------
 

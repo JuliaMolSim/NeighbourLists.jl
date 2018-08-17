@@ -5,7 +5,7 @@ using NearestNeighbors, Distances
 import Distances: evaluate
 
 
-immutable Periodic{T} <: Metric
+struct Periodic{T} <: Metric
    L::SVec{T}
    pbc::SVec{Bool}
 end

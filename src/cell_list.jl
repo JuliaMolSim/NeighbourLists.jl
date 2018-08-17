@@ -2,12 +2,12 @@ using Base.Threads
 
 export npairs, nsites
 
-PairList{T}(X::Vector{SVec{T}}, cutoff::AbstractFloat, cell::AbstractMatrix, pbc;
-            int_type::Type = Int, store_first = true, sorted = true, fixcell = true) =
+PairList(X::Vector{SVec{T}}, cutoff::AbstractFloat, cell::AbstractMatrix, pbc;
+            int_type::Type = Int, store_first = true, sorted = true, fixcell = true) where {T} =
    _pairlist_(X, SMat{T}(cell), SVec{Bool}(pbc), T(cutoff), zero(int_type),
               store_first, sorted, fixcell)
 
-PairList{T}(X::Matrix{T}, args...; kwargs...) =
+PairList(X::Matrix{T}, args...; kwargs...) where {T} =
    PairList(reinterpret(SVec{T}, X, (size(X,2),)), args...; varargs...)
 
 npairs(nlist::PairList) = length(nlist.i)
@@ -42,8 +42,8 @@ end
       pbc ? bin_wrap(i, n) : bin_trunc(i, n)
 
 "Map particle position to a (cartesian) cell index"
-@inline position_to_cell_index{T, TI <: Integer}(
-                        inv_cell::SMat{T}, x::SVec{T}, ns::SVec{TI}) =
+@inline position_to_cell_index(inv_cell::SMat{T}, x::SVec{T}, ns::SVec{TI}
+         ) where {T, TI <: Integer} =
    floor.(TI, ((inv_cell' * x) .* ns + 1))
 
 
@@ -51,10 +51,10 @@ end
 #              parts of the code!
 
 # an extension of sub2ind for the case when i is a vector (cartesian index)
-@inline Base.sub2ind{TI <: Integer}(dims::NTuple{3,TI}, i::SVec{TI}) =
+@inline Base.sub2ind(dims::NTuple{3,TI}, i::SVec{TI}) where {TI <: Integer} =
    sub2ind(dims, i[1], i[2], i[3])
 
-lengths{T}(C::SMat{T}) =
+lengths(C::SMat{T}) where {T} =
    det(C) ./ SVec{T}(norm(C[2,:]×C[3,:]), norm(C[3,:]×C[1,:]), norm(C[1,:]×C[2,:]))
 
 
@@ -307,7 +307,7 @@ element of `i` with value `n`. Further, `first[nat+1]` will be
 
 If `first[n] == first[n+1]` then this means that `i` contains no element `n`.
 """
-function get_first{TI}(i::Vector{TI}, nat::Integer = i[end])
+function get_first(i::Vector{TI}, nat::Integer = i[end]) where {TI}
    # compute the first index for each site
    first = Vector{TI}(nat + 1)
    idx = 1
