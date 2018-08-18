@@ -174,8 +174,9 @@ function _pairlist_(clist::CellList{T, TI}) where {T, TI}
 
    # Find out over how many neighbor cells we need to loop (if the box is small)
    nxyz = ceil.(TI, cutoff * (ns_vec ./ lens))
-   cxyz = CartesianIndex(nxyz.data)
-   xyz_range = CartesianIndices(- cxyz, cxyz)
+   # cxyz = CartesianIndex(nxyz.data)
+   # WARNING : 3D-specific hack; also potential performance regression
+   xyz_range = CartesianIndices((-nxyz[1]:nxyz[1], -nxyz[2]:nxyz[2], -nxyz[3]:nxyz[3]))
 
    # Loop over threads
    @threads for it = 1:nt
