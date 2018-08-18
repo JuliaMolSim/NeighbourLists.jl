@@ -1,6 +1,6 @@
 
 
-using NearestNeighbors, Distances
+using NearestNeighbors, Distances, LinearAlgebra
 
 import Distances: evaluate
 
@@ -10,7 +10,7 @@ struct Periodic{T} <: Metric
    pbc::SVec{Bool}
 end
 
-function evaluate{T}(d::Periodic{T}, x::AbstractVector, y::AbstractVector)
+function evaluate(d::Periodic{T}, x::AbstractVector, y::AbstractVector) where {T}
    s = 0.0
    for i = 1:3
       if d.pbc[i]
@@ -26,9 +26,10 @@ end
 # function nn_list{T, TI}(X::Vector{SVec{T}}, cutoff::T,
 #                         cell::SMat{T}, pbc::SVec{Bool}, _::TI)
 function nn_list(X::Vector{SVec{Float64}}, cutoff, cell, pbc::SVec{Bool})
-   const T = Float64
-   const TI = Int
-   @assert cell == SMat{T}(diagm(diag(cell)))   # require cubic cell
+   # WARNING: removed `const` here - will this slow down the code?
+   T = Float64
+   TI = Int
+   @assert cell == SMat{T}(diagm(0 => diag(cell)))   # require cubic cell
 
    # construct a periodic metric
    d = Periodic(SVec{T}(diag(cell)), pbc)
