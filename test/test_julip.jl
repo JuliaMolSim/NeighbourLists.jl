@@ -49,8 +49,11 @@ test_configs = [
     2.3 * rnn(:Ti) ),
    ]
 
+# ----------- A FEW MORE COMPLEX TESTS THAT FAILED AT SOME POINT ---------------
 
-# the test that failed during Cas' experiments
+# [1] a left-handed cell orientation
+#     the test that failed during Cas' experiments
+
 X = [ 0.00000000e+00  0.00000000e+00  0.00000000e+00
       1.92333044e+00  6.63816518e-17 -1.36000000e+00
       1.92333044e+00  1.92333044e+00 -2.72000000e+00
@@ -73,6 +76,28 @@ atlge = at * (1,1,10)
 rcut = 2.3*rnn(:Si)
 push!(test_configs, ("Si left-oriented", at, rcut))
 push!(test_configs, ("Si left-oriented, large", atlge, rcut))
+
+# [2] vacancy in bulk Si
+
+# using PyCall
+# at = bulk(:Si, cubic=true)
+# @pyimport ase.lattice.cubic as cubic
+# at2py = cubic.Diamond(symbol = "Si", latticeconstant = 5.43)
+# at2py[:get_positions]()
+# @test at2py[:get_cell]() ≈ cell(at1)
+# @test mat(positions(at1))' ≈ at2py[:get_positions]()[:,[3,2,1]]
+
+# at = bulk(:Si, cubic=true)
+# at1 = at * 3
+# X = mat(positions(at1))
+# at1 = deleteat!(at1, 1)
+# at2 = deleteat!(set_positions!(at * 3, X[[3,2,1],:]), 1)
+# rcut = 2.3 * rnn(:Si)
+# test_nlist_julip(at1, rcut)
+# test_nlist_julip(at2, rcut)
+
+
+# --------------- ACTUALLY RUNNING THE TESTS ------------------
 
 println("JuLIP Configuration tests:")
 for (i, (descr, at, cutoff)) in enumerate(test_configs)
