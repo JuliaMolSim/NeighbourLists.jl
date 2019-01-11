@@ -2,9 +2,10 @@ using Base.Threads
 
 export npairs, nsites
 
-PairList{T}(X::Vector{SVec{T}}, cutoff::AbstractFloat, cell::AbstractMatrix, pbc;
-            int_type::Type = Int, store_first = true, sorted = true, fixcell = true) =
-   _pairlist_(X, SMat{T}(cell), SVec{Bool}(pbc), T(cutoff), zero(int_type),
+PairList{T}(X::Vector{SVec{T}}, cutoff::AbstractFloat, cell::AbstractMatrix,
+         pbc, int_type = zero(Int);
+         store_first::Bool = true, sorted ::Bool= true, fixcell::Bool = true) =
+   _pairlist_(X, SMat{T}(cell), SVec{Bool}(pbc), T(cutoff), int_type,
               store_first, sorted, fixcell)
 
 PairList{T}(X::Matrix{T}, args...; kwargs...) =
