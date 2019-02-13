@@ -26,8 +26,10 @@ println("# threads = $(Base.Threads.nthreads())")
 @testset "NeighbourLists" begin
    @testset "Aux" begin include("test_aux.jl") end
    @testset "CellList" begin include("test_celllist.jl") end
-   # TODO: write tests for pair iterator and for site iterator 
+   # TODO: write tests for pair iterator and for site iterator
 
+   # we don't need this anymore since the n-body iteration has been
+   # moved to NBodyIPs. Maybe bring this back at some point...
    # @testset "NBodyIterators" begin include("test_nbody.jl") end
 
    # pointless until we switch to comparing against ASE / matscipy
