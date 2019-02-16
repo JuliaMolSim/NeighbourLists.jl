@@ -1,14 +1,14 @@
 # This file contains some code that is chared across several tests
 
-using StaticArrays, Base.Test, ForwardDiff
+using StaticArrays, Test, ForwardDiff
 using NeighbourLists: SMat, SVec
-using Base.Test, StaticArrays, ForwardDiff
+using Test, StaticArrays, ForwardDiff
 
 # ------ generate random configurations -------
 
 
 function rand_config(N)
-   C = SMat( diagm(2.0 + 0.2 * rand(3)) * N )
+   C = SMat( diagm(0 => 2.0 .+ 0.2 * rand(3)) * N )
    X = [ C' * rand(SVec)   for i = 1:ceil(Int, abs(det(C))) ÷ 4 + 2 ]
    pbc = SVec(rand(Bool, 3))
    return X, C, pbc

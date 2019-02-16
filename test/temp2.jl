@@ -42,7 +42,7 @@ macro symm(N, ex)
       loopstr *= ", $i$n"
    end
    loopstr *= ") \n end"
-   loopex = parse(loopstr)
+   loopex = Meta.parse(loopstr)
    append!(loopex.args[2].args, ex_body.args)
    # return the expression
    esc(quote

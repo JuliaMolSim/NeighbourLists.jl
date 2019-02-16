@@ -1,6 +1,7 @@
 
 using NeighbourLists: SMat, SVec
-using Base.Test
+using Test
+using LinearAlgebra
 
 
 include("nn_list.jl")
@@ -10,7 +11,7 @@ print("Testing PairList Correctness: ")
 for N in Ns
    print(".")
 
-   C = SMat( diagm(2.0 + 0.2 * rand(3)) * N )
+   C = SMat( diagm(0 => (2.0 .+ 0.2 * rand(3))) * N )
    X = [ C' * rand(SVec)   for i = 1:ceil(Int, abs(det(C))) ÷ 4 + 2 ]
    pbc = SVec(rand(Bool, 3))
    cutoff = 2.0

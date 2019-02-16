@@ -1,11 +1,11 @@
 
-import Base: start, done, next, length
+import Base: iterate, length, pairs 
 
 export pairs, sites, site, nbodies
 
 abstract type AbstractIterator end
 
-inc{T <: Integer}(i::T) = i + T(1)
+inc(i::T) where {T <: Integer} = i + T(1)
 
 # -------------- iterator over pairs ---------------
 
@@ -16,10 +16,11 @@ struct PairIterator{T,TI} <: AbstractIterator
    nlist::PairList{T,TI}
 end
 
-start{T,TI}(it::PairIterator{T,TI}) = TI(1)
-done(it::PairIterator, i::Integer) = (i > npairs(it.nlist))
-next(it::PairIterator, i) =
-   (it.nlist.i[i], it.nlist.j[i], it.nlist.r[i], it.nlist.R[i]), inc(i)
+_item(it::PairIterator, i::Integer) =
+               (it.nlist.i[i], it.nlist.j[i], it.nlist.r[i], it.nlist.R[i])
+iterate(it::PairIterator{T,TI}) where {T,TI} = _item(it, 1), TI(1)
+iterate(it::PairIterator, i::Integer) =
+   i >= npairs(it.nlist) ? nothing : (_item(it, inc(i)), inc(i))
 length(it::PairIterator) = npairs(it.nlist)
 
 # -------------- iterator over sites ---------------
@@ -35,9 +36,10 @@ struct SiteIterator{T,TI}  <: AbstractIterator
    nlist::PairList{T,TI}
 end
 
-start{T,TI}(it::SiteIterator{T,TI}) = one(TI)
-done(it::SiteIterator, i::Integer) = (i > nsites(it.nlist))
-next(it::SiteIterator, i::Integer) = (i, site(it.nlist, i)...), inc(i)
+_item(it::SiteIterator, i::Integer) = (i, site(it.nlist, i)...)
+iterate(it::SiteIterator{T,TI}) where {T,TI} = _item(it, 1), one(TI)
+iterate(it::SiteIterator, i::Integer) =
+   i >= length(it) ? nothing : (_item(it, i+1), inc(i))
 length(it::SiteIterator) = nsites(it.nlist)
 
 

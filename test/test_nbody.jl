@@ -1,5 +1,5 @@
 using ForwardDiff, StaticArrays, NeighbourLists
-using Base.Test
+using Test, LinearAlgebra, Printf
 
 # uncomment for testing from editor/file
 # include("test_aux.jl")
@@ -8,13 +8,13 @@ let rcut = 3.0
 
 fn, fn_d = gen_fnbody(rcut)
 
-function naive_n_body{T}(X::Vector{SVec{T}}, f, M, rcut)
+function naive_n_body(X::Vector{SVec{T}}, f, M, rcut) where {T}
    N = length(X)
    E = 0.0
    cnt = 0
    start = CartesianIndex(ntuple(_->1, M))
    stop = CartesianIndex(ntuple(_->N, M))
-   for j in CartesianRange(start, stop)
+   for j in CartesianIndices(start, stop)
       s = zeros(T, (M*(M-1))÷2); n = 0
       for a = 1:M-1, b = a+1:M
          n += 1
@@ -29,8 +29,8 @@ function naive_n_body{T}(X::Vector{SVec{T}}, f, M, rcut)
    return E
 end
 
-vecs{T}(V::Vector{T}) = reinterpret(SVector{3,T}, V, (length(V) ÷ 3,))
-mat{T}(V::Vector{SVector{3,T}}) = reinterpret(T, V, (3, length(V)))
+vecs(V::Vector{T}) where {T} = reinterpret(SVector{3,T}, V, (length(V) ÷ 3,))
+mat(V::Vector{SVector{3,T}}) where {T} = reinterpret(T, V, (3, length(V)))
 
 # NOT NEEDED - WE DO FINITE-DIFFERENCE TESTS INSTEAD!
 # function grad_naive_n_body(X, f, M, rcut)
