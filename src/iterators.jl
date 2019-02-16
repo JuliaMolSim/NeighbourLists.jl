@@ -1,5 +1,5 @@
 
-import Base: iterate, length
+import Base: iterate, length, pairs 
 
 export pairs, sites, site, nbodies
 
