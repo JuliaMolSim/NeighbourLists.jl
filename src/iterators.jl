@@ -1,5 +1,5 @@
 
-import Base: iterate, length, pairs 
+import Base: iterate, length, pairs
 
 export pairs, sites, site, nbodies
 
@@ -17,8 +17,9 @@ struct PairIterator{T,TI} <: AbstractIterator
 end
 
 _item(it::PairIterator, i::Integer) =
-               (it.nlist.i[i], it.nlist.j[i], it.nlist.r[i], it.nlist.R[i])
-iterate(it::PairIterator{T,TI}) where {T,TI} = _item(it, 1), TI(1)
+      (it.nlist.i[i], it.nlist.j[i], it.nlist.r[i], it.nlist.R[i])
+iterate(it::PairIterator{T,TI}) where {T,TI} =
+   npairs(it.nlist) > 0 ? (_item(it, 1), TI(1)) : nothing
 iterate(it::PairIterator, i::Integer) =
    i >= npairs(it.nlist) ? nothing : (_item(it, inc(i)), inc(i))
 length(it::PairIterator) = npairs(it.nlist)
