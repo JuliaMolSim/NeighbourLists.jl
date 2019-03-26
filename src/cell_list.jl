@@ -66,7 +66,12 @@ lengths(C::SMat{T}) where {T} =
 function analyze_cell(cell, cutoff, _::TI) where {TI <: Integer}
    # check the cell volume (allow only 3D volumes!)
    volume = abs(det(cell))
-   @assert volume > 1e-12
+   if volume < 1e-12
+      @warn("zero volume detected - proceed at your own risk")
+      @show cell
+      @show volume
+      @show cutoff
+   end
    # precompute inverse of cell matrix for coordiate transformation
    inv_cell = inv(cell)
    # Compute distance of cell faces
