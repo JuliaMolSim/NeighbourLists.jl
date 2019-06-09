@@ -1,9 +1,11 @@
 
 using JuLIP, ASE, StaticArrays, NeighbourLists
-using Base.Test
+using Test
 
 X_Ti = vecs([0.0 5.19374 2.59687 3.8953 1.29843 6.49217 7.7906 12.9843 10.3875 11.6859 9.08904 14.2828; 0.0 0.918131 1.83626 -1.11022e-16 0.918131 1.83626 -2.22045e-16 0.918131 1.83626 0.0 0.918131 1.83626; 0.0 0.0 0.0 2.24895 2.24895 2.24895 0.0 0.0 0.0 2.24895 2.24895 2.24895])
 C_Ti = (@SMatrix [15.5812 2.47895 0.0; 0.0 2.75439 0.0; 0.0 0.0 4.49791])
+
+
 
 # -------------- MatSciPy NeighbourList Patch -------------
 using PyCall
@@ -16,10 +18,10 @@ end
 
 function matscipy_nlist(at::Atoms{T}, rcut::T; recompute=false, kwargs...) where T <: AbstractFloat
    i, j, r, R = asenlist(at, rcut)
-   i = copy(i)+1
-   j = copy(j)+1
+   i = copy(i) .+ 1
+   j = copy(j) .+ 1
    r = copy(r)
-   R = vecs(copy(R'))
+   R = collect(vecs(copy(R')))
    first = NeighbourLists.get_first(i, length(at))
    NeighbourLists.sort_neigs!(j, r, R, first)
    return NeighbourLists.PairList(positions(at), rcut, i, j, r, R, first)
@@ -90,13 +92,16 @@ C = [ 3.84666089   0.           0.
 # C = [ 3.84666089   0.           0.
 #       0.           3.84666089   0.
 #       0.           0.           5.44 ]'
-at = Atoms(:Si, vecs(X))
+at = Atoms(:Si, collect(vecs(X)))
 set_cell!(at, C)
 set_pbc!(at, (true,true,true))
 atlge = at * (1,1,10)
 rcut = 2.3*rnn(:Si)
 push!(test_configs, ("Si left-oriented", at, rcut))
 push!(test_configs, ("Si left-oriented, large", atlge, rcut))
+
+test_nlist_julip(at, rcut)
+test_nlist_julip(atlge, rcut)
 
 # # [2] vacancy in bulk Si
 #
@@ -117,6 +122,20 @@ push!(test_configs, ("Si left-oriented, large", atlge, rcut))
 # test_nlist_julip(at1, rcut)
 # test_nlist_julip(at2, rcut)
 
+# [3] Two Ti configuration that seems to be causing problems
+C1 = @SMatrix [5.71757 -1.81834e-15 9.74255e-41; -2.85879 4.95156 4.93924e-25; 4.56368e-40 9.05692e-25 9.05629]
+X1 = vecs([0.00533847 2.85879 -1.42939 1.42939 0.0 2.85879 -1.42939 1.42939 -1.43e-6 2.85878 -1.42939 1.42939 -1.43e-6 2.85878 -1.42939 1.42939;
+          -0.0 -0.0 2.47578 2.47578 0.0 -0.0 2.47578 2.47578 1.65052 1.65052 4.1263 4.1263 1.65052 1.65052 4.1263 4.1263;
+          0.00845581 0.0 0.0 0.0 4.52815 4.52815 4.52815 4.52815 2.26407 2.26407 2.26407 2.26407 6.79222 6.79222 6.79222 6.79222]) |> collect
+C2 = @SMatrix [5.71757 0.0 0.0; -2.85879 4.95156 0.0; 0.0 0.0 9.05629]
+X2 = vecs([0.00534021 2.85879 -1.42939 1.42939 0.0 2.85879 -1.42939 1.42939 0.0 2.85879 -1.4294 1.4294 0.0 2.85879 -1.4294 1.4294;
+           0.0 0.0 2.47578 2.47578 0.0 0.0 2.47578 2.47578 1.65052 1.65052 4.1263 4.1263 1.65052 1.65052 4.1263 4.1263;
+           0.00845858 0.0 0.0 0.0 4.52815 4.52815 4.52815 4.52815 2.26407 2.26407 2.26407 2.26407 6.79222 6.79222 6.79222 6.79222])  |> collect
+at1 = set_cell!(Atoms(:Ti, X1), C1)
+at2 = set_cell!(Atoms(:Ti, X2), C2)
+rcut = 2.5 * rnn(:Ti)
+test_nlist_julip(at1, rcut)
+test_nlist_julip(at2, rcut)
 
 # --------------- ACTUALLY RUNNING THE TESTS ------------------
 
