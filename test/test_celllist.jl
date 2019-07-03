@@ -7,10 +7,8 @@ using LinearAlgebra
 include("nn_list.jl")
 
 Ns = [3,3,4,4,5,5]
-print("Testing PairList Correctness: ")
+@info("Testing PairList Correctness: ")
 for N in Ns
-   print(".")
-
    C = SMat( diagm(0 => (2.0 .+ 0.2 * rand(3))) * N )
    X = [ C' * rand(SVec)   for i = 1:ceil(Int, abs(det(C))) ÷ 4 + 2 ]
    pbc = SVec(rand(Bool, 3))
@@ -25,7 +23,7 @@ for N in Ns
    first = NeighbourLists.get_first(i, length(X))
    NeighbourLists.sort_neigs!(j, r, R, first)
 
-   @test (nlist.i == i) && (nlist.j == j)
+   println(@test (nlist.i == i) && (nlist.j == j))
 
    # check that they are sorted
    pass_sorted = true
@@ -35,6 +33,17 @@ for N in Ns
          break
       end
    end
-   @test pass_sorted
+   print("sorted: "); println(@test pass_sorted)
+
+   # check that the neighbourhoods produced by `neigs` are correct
+   pass_neigs = true
+   for (i, j, r, R) in NeighbourLists.sites(nlist)
+      j_, r_, R_ = neigs(nlist, i)
+      if j != j_ || r != r_ || R != R_
+         pass_neigs = false
+         break
+      end
+   end
+   print("neigs: "); println(@test pass_neigs)
 end
 println()

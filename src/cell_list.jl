@@ -1,6 +1,6 @@
 using Base.Threads, LinearAlgebra
 
-export npairs, nsites
+export npairs, nsites, max_neigs, max_neighbours, neigs, neighbours
 
 PairList(X::Vector{SVec{T}}, cutoff::AbstractFloat, cell::AbstractMatrix, pbc;
             int_type::Type = Int, store_first = true, sorted = true, fixcell = true) where {T} =
@@ -426,3 +426,30 @@ function _fix_cell_(X::Vector{SVec{T}}, C::SMat{T}, pbc) where {T}
    end
    return X, C
 end
+
+"""
+`neigs(nlist, i) -> j, r, R`
+
+For `nlist::PairList` this returns the interaction neighbourhood of
+the atom indexed by `i`. E.g., in the standard loop approach one
+would have
+```
+for (i, j, r, R) in sites(nlist)
+   (j, r, R) == neigs(nlist, i)
+end
+```
+"""
+function neigs(nlist::PairList, i::Integer)
+   Ineigs = nlist.first[i]:(nlist.first[i+1]-1)
+   return nlist.j[Ineigs], nlist.r[Ineigs], nlist.R[Ineigs]
+end
+
+"""
+alias for `neigs`
+"""
+neighbours = neigs
+
+"""
+alias for `max_neigs`
+"""
+max_neighbours = max_neigs
