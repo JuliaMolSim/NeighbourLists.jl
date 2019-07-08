@@ -12,6 +12,7 @@ PairList(X::Matrix{T}, args...; kwargs...) where {T} =
 
 npairs(nlist::PairList) = length(nlist.i)
 nsites(nlist::PairList) = length(nlist.first) - 1
+cutoff(nlist::PairList) = nlist.cutoff
 
 
 # ====================== Cell Index Algebra =====================

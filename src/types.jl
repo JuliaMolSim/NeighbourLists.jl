@@ -61,5 +61,5 @@ struct CellList{T <: AbstractFloat, TI <: Integer}
    seed::Vector{TI}
    last::Vector{TI}
    next::Vector{TI}
-   nats::Vector{TI} 
+   nats::Vector{TI}
 end
