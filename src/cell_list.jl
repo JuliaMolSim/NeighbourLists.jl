@@ -165,6 +165,7 @@ function _pairlist_(clist::CellList{T, TI}) where {T, TI}
    secnd_t = Vector{TI}[ Vector{TI}()  for n = 1:nt ]    # j
    absdist_t = Vector{T}[ Vector{T}()  for n = 1:nt ]  # r_ij ~ norm(X[i]-X[j])
    distvec_t = Vector{SVec{T}}[ Vector{SVec{T}}()  for n = 1:nt ]  # ~ X[i] - X[j]
+   shift_t = Vector{SVec{TI}}[ Vector{SVec{TI}}()  for n = 1:nt ]  # ~ X[i] - X[j]
    # give size hints
    sz = (nat ÷ nt + nt) * nneigs_guess
    for n = 1:nt
@@ -172,6 +173,7 @@ function _pairlist_(clist::CellList{T, TI}) where {T, TI}
       sizehint!(secnd_t[n], sz)
       sizehint!(absdist_t[n], sz)
       sizehint!(distvec_t[n], sz)
+      sizehint!(shift_t[n], sz)
    end
 
    # We need the shape of the bin ( bins[:, i] = cell[i,:] / ns[i] )
@@ -185,11 +187,13 @@ function _pairlist_(clist::CellList{T, TI}) where {T, TI}
    xyz_range = CartesianIndices((-nxyz[1]:nxyz[1], -nxyz[2]:nxyz[2], -nxyz[3]:nxyz[3]))
 
    # Loop over threads
-   @threads for it = 1:nt
+   # @threads for it = 1:nt
+   for it = 1:nt
       for i = nn[it]:(nn[it+1]-1)
          # current atom position
          _find_neighbours_!(i, clist, ns_vec, bins, xyz_range,
-                     first_t[it], secnd_t[it], absdist_t[it], distvec_t[it])
+                     first_t[it], secnd_t[it], absdist_t[it], distvec_t[it],
+                     shift_t[it])
       end # for i = 1:nat
    end # @threads
 
@@ -199,21 +203,23 @@ function _pairlist_(clist::CellList{T, TI}) where {T, TI}
    secnd = secnd_t[1];     sizehint!(secnd, sz)
    absdist = absdist_t[1]; sizehint!(absdist, sz)
    distvec = distvec_t[1]; sizehint!(distvec, sz)
+   shift = shift_t[1]; sizehint!(shift, sz)
    for it = 2:nt
       append!(first, first_t[it])
       append!(secnd, secnd_t[it])
       append!(absdist, absdist_t[it])
       append!(distvec, distvec_t[it])
+      append!(shift, shift_t[it])
    end
 
    # Build return tuple
-   return first, secnd, absdist, distvec
+   return first, secnd, absdist, distvec, shift
 end
 
 
 
 function _find_neighbours_!(i, clist, ns_vec::SVec{TI}, bins, xyz_range,
-                            first, secnd, absdist, distvec) where TI
+                            first, secnd, absdist, distvec, shift) where TI
    inv_cell, X, pbc = clist.inv_cell, clist.X, clist.pbc
    seed, last, next = clist.seed, clist.last, clist.next
    xi = X[i]
@@ -271,6 +277,7 @@ function _find_neighbours_!(i, clist, ns_vec::SVec{TI}, bins, xyz_range,
                push!(secnd, j)
                push!(distvec, dx)
                push!(absdist, sqrt(norm_dx_sq))
+               push!(shift, (ci0 - cj + xyz) .÷ ns_vec)
             end
          end  # if i != j || any(xyz .!= 0)
 
@@ -290,7 +297,7 @@ function _pairlist_(X::Vector{SVec{T}}, cell::SMat{T}, pbc::SVec{Bool},
    end
 
    clist = _celllist_(X, cell, pbc, cutoff, _i)
-   i, j, r, R = _pairlist_(clist)
+   i, j, r, R, S = _pairlist_(clist)
 
    if store_first
       first = get_first(i, length(X))
@@ -299,10 +306,10 @@ function _pairlist_(X::Vector{SVec{T}}, cell::SMat{T}, pbc::SVec{Bool},
    end
 
    if store_first && sorted
-      sort_neigs!(j, r, R, first)
+      sort_neigs!(j, r, R, S, first)
    end
 
-   return PairList(X, cutoff, i, j, r, R, first)
+   return PairList(X, cutoff, i, j, r, R, S, first)
 end
 
 
@@ -346,7 +353,7 @@ end
 sorts each sub-range of `j` corresponding to one site  in ascending order
 and applies the same permutation to `r, R, S`.
 """
-function sort_neigs!(j, r, R, first)
+function sort_neigs!(j, r, R, S, first)
    nat = length(first) - 1
    nt, nn = setup_mt(nat)
    @threads for it = 1:nt
@@ -360,6 +367,7 @@ function sort_neigs!(j, r, R, first)
                j[rg] = j[rg_perm]
                r[rg] = r[rg_perm]
                R[rg] = R[rg_perm]
+               S[rg] = S[rg_perm]
             end
          end
       end
@@ -440,10 +448,11 @@ for (i, j, r, R) in sites(nlist)
 end
 ```
 """
-function neigs(nlist::PairList, i::Integer)
-   Ineigs = nlist.first[i]:(nlist.first[i+1]-1)
-   return nlist.j[Ineigs], nlist.r[Ineigs], nlist.R[Ineigs]
+function neigs(nlist::PairList, i0::Integer)
+   n1, n2 = nlist.first[i0], nlist.first[i0+1]-1
+   return (@view nlist.j[n1:n2]), (@view nlist.r[n1:n2]), (@view nlist.R[n1:n2])
 end
+
 
 """
 alias for `neigs`

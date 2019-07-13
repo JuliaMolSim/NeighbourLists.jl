@@ -44,6 +44,7 @@ struct PairList{T <: AbstractFloat, TI <: Integer}
    j::Vector{TI}
    r::Vector{T}
    R::Vector{SVec{T}}
+   S::Vector{SVec{TI}}
    first::Vector{TI}
 end
 

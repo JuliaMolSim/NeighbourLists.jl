@@ -87,7 +87,7 @@ end
 
 function maptosites!(f::FT, out::AbstractVector, it::SiteIterator) where FT
    @threads for i = 1:nsites(it.nlist)
-      _, r, R = site(it.nlist, i)
+      _, r, R = neigs(it.nlist, i)
       out[i] = f(r, R)
    end
    return out
@@ -97,7 +97,7 @@ function maptosites_d!(df::FT, out::AbstractVector, it::SiteIterator) where FT
    nt = nthreads()
    OUT = [out; [zeros(out) for n = 2:nt]]
    @threads for i = 1:nsites(it.nlist)
-      j, r, R = site(it.nlist, i)
+      j, r, R = neigs(it.nlist, i)
       df_ = df(r, R)
       OUT[threadid()][j] += df_
       OUT[threadid()][i] -= sum(df_)

@@ -26,10 +26,6 @@ length(it::PairIterator) = npairs(it.nlist)
 
 # -------------- iterator over sites ---------------
 
-function site(nlist::PairList, i0)
-   n1, n2 = nlist.first[i0], nlist.first[i0+1]-1
-   return (@view nlist.j[n1:n2]), (@view nlist.r[n1:n2]), (@view nlist.R[n1:n2])
-end
 
 sites(nlist::PairList) = SiteIterator(nlist)
 
@@ -37,7 +33,7 @@ struct SiteIterator{T,TI}  <: AbstractIterator
    nlist::PairList{T,TI}
 end
 
-_item(it::SiteIterator, i::Integer) = (i, site(it.nlist, i)...)
+_item(it::SiteIterator, i::Integer) = (i, neigs(it.nlist, i)...)
 iterate(it::SiteIterator{T,TI}) where {T,TI} = _item(it, 1), one(TI)
 iterate(it::SiteIterator, i::Integer) =
    i >= length(it) ? nothing : (_item(it, i+1), inc(i))
