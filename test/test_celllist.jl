@@ -21,13 +21,13 @@ for N in Ns
    i, j, r, R = nn_list(X, cutoff, C, pbc)
    R = X[j] - X[i]
    first = NeighbourLists.get_first(i, length(X))
-   NeighbourLists.sort_neigs!(j, r, R, zeros(SVec{Int32}, length(r)), first)
+   NeighbourLists.sort_neigs!(j, (r, R), first)
 
    println(@test (nlist.i == i) && (nlist.j == j))
 
    # check that they are sorted
    pass_sorted = true
-   for (_1, j, _2, _3) in NeighbourLists.sites(nlist)
+   for (_1, j, _3) in NeighbourLists.sites(nlist)
       if !issorted(j)
          pass_sorted = false
          break
@@ -37,8 +37,8 @@ for N in Ns
 
    # check that the neighbourhoods produced by `neigs` are correct
    pass_neigs = true
-   for (i, j, r, R) in NeighbourLists.sites(nlist)
-      j_, R_ = NeighbourLists.newneigs(nlist, i)
+   for (i, j, R) in NeighbourLists.sites(nlist)
+      j_, R_ = NeighbourLists.neigs(nlist, i)
       if j != j_ || !(R ≈ R_)
          pass_neigs = false
          break

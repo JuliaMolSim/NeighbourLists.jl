@@ -43,8 +43,6 @@ struct PairList{T <: AbstractFloat, TI <: Integer}
    cutoff::T
    i::Vector{TI}
    j::Vector{TI}
-   r::Vector{T}
-   R::Vector{SVec{T}}
    S::Vector{SVec{TI}}
    first::Vector{TI}
 end
