@@ -309,7 +309,7 @@ function _pairlist_(X::Vector{SVec{T}}, cell::SMat{T}, pbc::SVec{Bool},
       sort_neigs!(j, r, R, S, first)
    end
 
-   return PairList(X, cutoff, i, j, r, R, S, first)
+   return PairList(X, cell, cutoff, i, j, r, R, S, first)
 end
 
 
@@ -374,16 +374,6 @@ function sort_neigs!(j, r, R, S, first)
    end
 end
 
-"""
-`max_neigs(nlist::PairList) -> Integer`
-
-returns the maximum number of neighbours that any atom in the
-neighbourlist has.
-"""
-function max_neigs(nlist::PairList)
-      maximum( nlist.first[n+1]-nlist.first[n]
-               for n = 1:(length(nlist.first)-1) )
-end
 
 """
 `_fix_cell_(X::Vector{SVec{T}}, C::SMat{T}, pbc)`
@@ -437,6 +427,32 @@ function _fix_cell_(X::Vector{SVec{T}}, C::SMat{T}, pbc) where {T}
 end
 
 """
+`maxneigs(nlist::PairList) -> Integer`
+
+returns the maximum number of neighbours that any atom in the
+neighbourlist has.
+"""
+maxneigs(nlist::PairList) = maximum( nneigs(nlist, n) for n = 1:nsites(nlist) )
+
+# retire max_neigs
+const max_neigs = maxneigs
+
+"""
+`nneigs(nlist::PairList, i0::Integer) -> Integer` :
+return number of neighbours of particle with index `i0`.
+(within cutoff radius + buffer)
+"""
+nneigs(nlist::PairList, i0::Integer) = nlist.first[i0+1]-nlist.first[i0]
+
+function _getR(nlist, idx)
+   i = nlist.i[idx]
+   j = nlist.j[idx]
+   return _getR(nlist.X[j] - nlist.X[i], nlist.S[idx], nlist.C)
+end
+
+_getR(dX::SVec, S::SVec, C::SMat) = dX + C' * S
+
+"""
 `neigs(nlist, i) -> j, r, R`
 
 For `nlist::PairList` this returns the interaction neighbourhood of
@@ -448,11 +464,31 @@ for (i, j, r, R) in sites(nlist)
 end
 ```
 """
+function neigs!(Rs::AbstractVector{<: SVec}, nlist::PairList, i0::Integer)
+   n1, n2 = nlist.first[i0], nlist.first[i0+1]-1
+   J = (@view nlist.j[n1:n2])
+   for n = 1:length(J)
+      Rs[n] = _getR(nlist, n1+n-1)
+   end
+   return J, (@view Rs[1:length(J)])
+end
+
+function neigs!(Js::AbstractVector{<: SVec},
+                Rs::AbstractVector{<: SVec},
+                nlist::PairList, i0::Integer)
+   j, Rs = neigs!(Rs, nlist, i0)
+   N = length(j)
+   copyto!(Js, j)
+   return (@view Js[1:length(j)]), Rs
+end
+
+newneigs(nlist::PairList{T}, i0::Integer) where {T} =
+      neigs!( zeros(SVec{T}, nneigs(nlist, i0)), nlist, i0 )
+
 function neigs(nlist::PairList, i0::Integer)
    n1, n2 = nlist.first[i0], nlist.first[i0+1]-1
    return (@view nlist.j[n1:n2]), (@view nlist.r[n1:n2]), (@view nlist.R[n1:n2])
-end
-
+end 
 
 """
 alias for `neigs`

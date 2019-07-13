@@ -39,6 +39,7 @@ column storage of the adjacancy matrix.
 """
 struct PairList{T <: AbstractFloat, TI <: Integer}
    X::Vector{SVec{T}}
+   C::SMat{T}
    cutoff::T
    i::Vector{TI}
    j::Vector{TI}
