@@ -38,6 +38,11 @@ for N in Ns
          pass_neigs = false
          break
       end
+      js, Rs, Ss = NeighbourLists.neigss(nlist, i)
+      if j != js || !(R ≈ Rs)
+         pass_neigs = false
+         break
+      end
    end
    print("neigs: "); println(@test pass_neigs)
 end

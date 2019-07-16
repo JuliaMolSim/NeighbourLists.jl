@@ -442,7 +442,7 @@ end
 _getR(dX::SVec, S::SVec, C::SMat) = dX + C' * S
 
 """
-`neigs(nlist, i) -> j, r, R`
+`neigs(nlist, i) -> j, R`
 
 For `nlist::PairList` this returns the interaction neighbourhood of
 the atom indexed by `i`. E.g., in the standard loop approach one
@@ -452,6 +452,8 @@ for (i, j, r, R) in sites(nlist)
    (j, r, R) == neigs(nlist, i)
 end
 ```
+
+(`R` is a view into `Rs` with the correct length)
 """
 function neigs!(Rs::AbstractVector{<: SVec}, nlist::PairList, i0::Integer)
    n1, n2 = nlist.first[i0], nlist.first[i0+1]-1
@@ -471,9 +473,27 @@ function neigs!(Js::AbstractVector{<: SVec},
    return (@view Js[1:length(j)]), Rs
 end
 
+"""
+`neigss!(Rs, nlist, i0) -> j, R, S` : return neighbourhood as in
+`neigs!` as well as the corresponding cell shifts.
+
+(`R` is a view into `Rs` with the correct length)
+"""
+function neigss!(Rs::AbstractVector{<: SVec}, nlist::PairList, i0::Integer)
+   n1, n2 = nlist.first[i0], nlist.first[i0+1]-1
+   J = (@view nlist.j[n1:n2])
+   for n = 1:length(J)
+      Rs[n] = _getR(nlist, n1+n-1)
+   end
+   return J, (@view Rs[1:length(J)]), (@view nlist.S[n1:n2])
+end
+
+
 neigs(nlist::PairList{T}, i0::Integer) where {T} =
       neigs!( zeros(SVec{T}, nneigs(nlist, i0)), nlist, i0 )
 
+neigss(nlist::PairList{T}, i0::Integer) where {T} =
+      neigss!( zeros(SVec{T}, nneigs(nlist, i0)), nlist, i0 )
 
 """
 alias for `neigs`
