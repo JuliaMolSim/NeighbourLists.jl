@@ -1,9 +1,9 @@
 using Base.Threads, LinearAlgebra
 
-export npairs, nsites, max_neigs, max_neighbours, neigs, neighbours
+export npairs, nsites, maxneigs, max_neighbours, neigs, neighbours
 
 PairList(X::Vector{SVec{T}}, cutoff::AbstractFloat, cell::AbstractMatrix, pbc;
-            int_type::Type = Int, store_first = true, sorted = true, fixcell = true) where {T} =
+            int_type::Type = Int32, store_first = true, sorted = true, fixcell = true) where {T} =
    _pairlist_(X, SMat{T}(cell), SVec{Bool}(pbc), T(cutoff), zero(int_type),
               store_first, sorted, fixcell)
 
