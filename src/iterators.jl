@@ -17,7 +17,7 @@ struct PairIterator{T,TI} <: AbstractIterator
 end
 
 _item(it::PairIterator, i::Integer) =
-      (it.nlist.i[i], it.nlist.j[i], _getR(nlist, i))
+      (it.nlist.i[i], it.nlist.j[i], _getR(it.nlist, i))
 iterate(it::PairIterator{T,TI}) where {T,TI} =
    npairs(it.nlist) > 0 ? (_item(it, 1), TI(1)) : nothing
 iterate(it::PairIterator, i::Integer) =

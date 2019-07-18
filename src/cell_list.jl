@@ -442,21 +442,24 @@ end
 _getR(dX::SVec, S::SVec, C::SMat) = dX + C' * S
 
 """
-`neigs(nlist, i) -> j, R`
+`neigs!(Rtemp, nlist, i) -> j, R`
 
 For `nlist::PairList` this returns the interaction neighbourhood of
 the atom indexed by `i`. E.g., in the standard loop approach one
 would have
 ```
-for (i, j, r, R) in sites(nlist)
-   (j, r, R) == neigs(nlist, i)
+Rtemp = zeros(JVecF, maxneigs(nlist))
+for (i, j, R) in sites(nlist)
+   (j, R) == neigs(nlist, i) == neigs!(Rtemp, nlist, i)
 end
 ```
 
-(`R` is a view into `Rs` with the correct length)
+`R` is a view into `Rtemp` with the correct length, while `j` is a view
+into `nlist.j`.
 """
 function neigs!(Rs::AbstractVector{<: SVec}, nlist::PairList, i0::Integer)
    n1, n2 = nlist.first[i0], nlist.first[i0+1]-1
+   _grow_array!(Rs, n2-n1+1)
    J = (@view nlist.j[n1:n2])
    for n = 1:length(J)
       Rs[n] = _getR(nlist, n1+n-1)
@@ -467,10 +470,19 @@ end
 function neigs!(Js::AbstractVector{<: SVec},
                 Rs::AbstractVector{<: SVec},
                 nlist::PairList, i0::Integer)
+   _grow_array!(Rs, n2-n1+1)
+   _grow_array!(Js, n2-n1+1)
    j, Rs = neigs!(Rs, nlist, i0)
    N = length(j)
    copyto!(Js, j)
    return (@view Js[1:length(j)]), Rs
+end
+
+function _grow_array!(A::Vector{T}, N) where {T}
+   if length(A) < N
+      append!(A, zeros(T, N-length(A)))
+   end
+   return A
 end
 
 """
@@ -481,6 +493,7 @@ end
 """
 function neigss!(Rs::AbstractVector{<: SVec}, nlist::PairList, i0::Integer)
    n1, n2 = nlist.first[i0], nlist.first[i0+1]-1
+   _grow_array!(Rs, n2-n1+1)
    J = (@view nlist.j[n1:n2])
    for n = 1:length(J)
       Rs[n] = _getR(nlist, n1+n-1)
