@@ -3,9 +3,9 @@ using Base.Threads, LinearAlgebra
 export npairs, nsites, maxneigs, max_neighbours, neigs, neighbours
 
 PairList(X::Vector{SVec{T}}, cutoff::AbstractFloat, cell::AbstractMatrix, pbc;
-            int_type::Type = Int32, store_first = true, sorted = true, fixcell = true) where {T} =
-   _pairlist_(X, SMat{T}(cell), SVec{Bool}(pbc), T(cutoff), zero(int_type),
-              store_first, sorted, fixcell)
+            int_type::Type = Int32, fixcell = true) where {T} =
+   _pairlist_(X, SMat{T}(cell), SVec{Bool}(pbc), T(cutoff), int_type,
+              fixcell)
 
 PairList(X::Matrix{T}, args...; kwargs...) where {T} =
    PairList(reinterpret(SVec{T}, X, (size(X,2),)), args...; varargs...)
@@ -64,7 +64,8 @@ lengths(C::SMat{T}) where {T} =
 
 # --------------------------------------------------------------------------
 
-function analyze_cell(cell, cutoff, _::TI) where {TI <: Integer}
+function analyze_cell(cell, cutoff, TI)
+   @assert TI <: Integer
    # check the cell volume (allow only 3D volumes!)
    volume = abs(det(cell))
    if volume < 1e-12
@@ -85,7 +86,7 @@ end
 
 # multi-threading setup
 
-function setup_mt(niter::TI, maxnt = MAX_THREADS[1]) where TI
+function setup_mt(niter::TI, maxnt = MAX_THREADS[1]) where TI <: Integer
    nt = minimum([6, nthreads(), ceil(TI, niter / 20), maxnt])
    # nn = ceil.(TI, linspace(1, niter+1, nt+1))
    # range(start, stop=stop, length=length)
@@ -97,11 +98,11 @@ end
 
 
 function _celllist_(X::Vector{SVec{T}}, cell::SMat{T}, pbc::SVec{Bool},
-            cutoff::T, _i::TI) where {T <: AbstractFloat, TI <: Integer}
-
+            cutoff::T, TI) where {T <: AbstractFloat}
+   @assert TI <: Integer
    # ----- analyze cell -----
    nat = length(X)
-   inv_cell, ns_vec, lens = analyze_cell(cell, cutoff, _i)
+   inv_cell, ns_vec, lens = analyze_cell(cell, cutoff, TI)
    ns = ns_vec.data
 
    if prod(BigInt.(ns_vec)) > typemax(TI)
@@ -150,7 +151,7 @@ function _pairlist_(clist::CellList{T, TI}) where {T, TI}
          clist.X, clist.cell, clist.pbc, clist.cutoff,
          clist.seed, clist.last, clist.next
    nat = length(X)
-   inv_cell, ns_vec, lens = analyze_cell(cell, cutoff, one(TI))
+   inv_cell, ns_vec, lens = analyze_cell(cell, cutoff, TI)
 
    # guess how many neighbours per atom
    #    atoms in cell x (8 cells) * (ball / cube)
@@ -278,25 +279,18 @@ end
 
 
 function _pairlist_(X::Vector{SVec{T}}, cell::SMat{T}, pbc::SVec{Bool},
-            cutoff::T, _i::TI, store_first::Bool, sorted::Bool, fixcell::Bool) where {T, TI}
-
+            cutoff::T, TI, fixcell::Bool) where {T}
+   @assert TI <: Integer
    # temporary (?) fix to make sure all atoms are within the cell
    if fixcell
       X, cell = _fix_cell_(X, cell, pbc)
    end
 
-   clist = _celllist_(X, cell, pbc, cutoff, _i)
+   clist = _celllist_(X, cell, pbc, cutoff, TI)
    i, j, S = _pairlist_(clist)
 
-   if store_first
-      first = get_first(i, length(X))
-   else
-      first = zeros(int_type, 0)
-   end
-
-   if store_first && sorted
-      sort_neigs!(j, (S,), first)
-   end
+   first = get_first(i, length(X))
+   sort_neigs!(j, (S,), first)
 
    return PairList(X, cell, cutoff, i, j, S, first)
 end
