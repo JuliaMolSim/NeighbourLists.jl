@@ -1,6 +1,6 @@
 using Base.Threads, LinearAlgebra
 
-export npairs, nsites, maxneigs, max_neighbours, neigs, neighbours
+export npairs, nsites, maxneigs, max_neighbours, neigs, neighbours, neigs!
 
 PairList(X::Vector{SVec{T}}, cutoff::AbstractFloat, cell::AbstractMatrix, pbc;
             int_type::Type = Int32, fixcell = true) where {T} =
@@ -28,15 +28,16 @@ end
 @inline bin_wrap(i::Integer, pbc::Bool, n::Integer) = pbc ? bin_wrap(i, n) : i
 
 "Map i back to the interval [0,n) by assigning edge value if outside interval"
-@inline function bin_trunc(i::Integer, n::Integer)
-   if i <= 0;     i = 1
+@inline function bin_trunc(i::TI, n::TI) where {TI <: Integer}
+   if i <= 0;     i = TI(1)
    elseif i > n;  i = n
    end
    return i
 end
 
 "apply bin_trunc only if open bdry"
-@inline bin_trunc(i::Integer, pbc::Bool, n::Integer) = pbc ? i : bin_trunc(i, n)
+@inline bin_trunc(i::TI, pbc::Bool, n::TI) where {TI <: Integer} =
+      pbc ? TI(i) : bin_trunc(i, n)
 
 "applies bin_trunc to open bdry and bin_wrap to periodic bdry"
 @inline bin_wrap_or_trunc(i::Integer, pbc::Integer, n::Integer) =
@@ -55,8 +56,9 @@ end
 # @inline Base.sub2ind(dims::NTuple{3,TI}, i::SVec{TI}) where {TI <: Integer} =
 #    sub2ind(dims, i[1], i[2], i[3])
 # WARNING: this smells like a performance regression!
+# WARNING: `LinearIndices` always returnsstores Int, not TI!!!
 @inline _sub2ind(dims::NTuple{3,TI}, i::SVec{TI}) where {TI <: Integer} =
-   (LinearIndices(dims))[i[1], i[2], i[3]]
+   TI( (LinearIndices(dims))[i[1], i[2], i[3]] )
 
 lengths(C::SMat{T}) where {T} =
    det(C) ./ SVec{T}(norm(C[2,:]×C[3,:]), norm(C[3,:]×C[1,:]), norm(C[1,:]×C[2,:]))
@@ -125,7 +127,7 @@ function _celllist_(X::Vector{SVec{T}}, cell::SMat{T}, pbc::SVec{Bool},
       # Periodic/non-periodic boundary conditions
       c = bin_wrap_or_trunc.(c, pbc, ns_vec)
       # linear cell index  # (+1 due to 1-based indexing)
-      ci = _sub2ind(ns, c)   # <<<<
+      ci = _sub2ind(ns, c)
 
       # Put atom into appropriate bin (list of linked lists)
       if seed[ci] < 0   #  ci contains no atom yet
@@ -181,7 +183,10 @@ function _pairlist_(clist::CellList{T, TI}) where {T, TI}
    nxyz = ceil.(TI, cutoff * (ns_vec ./ lens))
    # cxyz = CartesianIndex(nxyz.data)
    # WARNING : 3D-specific hack; also potential performance regression
-   xyz_range = CartesianIndices((-nxyz[1]:nxyz[1], -nxyz[2]:nxyz[2], -nxyz[3]:nxyz[3]))
+   # WARNING: `CartesianIndices` always stores Int, not TI!!!
+   xyz_range = CartesianIndices((-nxyz[1]:nxyz[1],
+                                 -nxyz[2]:nxyz[2],
+                                 -nxyz[3]:nxyz[3]))
 
    # Loop over threads
    # @threads for it = 1:nt
@@ -189,7 +194,7 @@ function _pairlist_(clist::CellList{T, TI}) where {T, TI}
       for i = nn[it]:(nn[it+1]-1)
          # current atom position
          _find_neighbours_!(i, clist, ns_vec, bins, xyz_range,
-                            first_t[it], secnd_t[it], shift_t[it])
+                      first_t[it], secnd_t[it], shift_t[it])
       end # for i = 1:nat
    end # @threads
 
@@ -232,13 +237,13 @@ function _find_neighbours_!(i, clist, ns_vec::SVec{TI}, bins, xyz_range,
    # Apply periodic boundary conditions as well now
    ci = bin_wrap_or_trunc.(ci0, pbc, ns_vec)
 
-   for ixyz in xyz_range
+   for ixyz in xyz_range  # Integer
       # convert cartesian index to SVector
       xyz = SVec{TI}(ixyz.I)
       # get the bin index
       cj = bin_wrap.(ci + xyz, pbc, ns_vec)
       # skip this bin if not inside the domain
-      all(1 .<= cj .<= ns_vec) || continue
+      all(TI(1) .<= cj .<= ns_vec) || continue
       # linear cell index
       ncj = _sub2ind(ns_vec.data, cj)
       # Offset of the neighboring bins
