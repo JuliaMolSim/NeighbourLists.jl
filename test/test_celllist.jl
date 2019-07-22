@@ -15,7 +15,7 @@ for N in Ns
    cutoff = 2.0
 
    # compute a cell list
-   nlist = PairList(X, cutoff, C, pbc; sorted = true)
+   nlist = PairList(X, cutoff, C, pbc)
    @show typeof(nlist)
 
    # compute a NearestNeighbors list
