@@ -23,15 +23,15 @@ sqrt1p_d(x) = 0.5 / sqrt(1+x)
 
 function fnbody(r, r0, rcut)
    E = sum( exp.(1.0 .- r./r0) )
-   F = prod( (r./rcut - 1.0) .* (r .< rcut) )
+   F = prod( (r./rcut .- 1.0) .* (r .< rcut) )
    return sqrt1p(E) * F^2
 end
 
 function fnbody_d(r, r0, rcut)
    E = sum( exp.(1.0 .- r./r0) )
-   F = prod( (r./rcut - 1.0) .* (r .< rcut) )
+   F = prod( (r./rcut .- 1.0) .* (r .< rcut) )
    ∇f = (- sqrt1p_d(E) * F^2 / r0) .* (exp.(1.0 .- r./r0))
-   ∇f += (sqrt1p(E) * 2.0 / rcut * F^2) .* (r./rcut .- 1.0 - 1e-14).^(-1)
+   ∇f += (sqrt1p(E) * 2.0 / rcut * F^2) .* (r./rcut .- 1.0 .- 1e-14).^(-1)
    return ∇f
 end
 
