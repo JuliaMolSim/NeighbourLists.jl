@@ -46,7 +46,7 @@ end
 "Map particle position to a (cartesian) cell index"
 @inline position_to_cell_index(inv_cell::SMat{T}, x::SVec{T}, ns::SVec{TI}
          ) where {T, TI <: Integer} =
-   floor.(TI, ((inv_cell' * x) .* ns + 1))
+   floor.(TI, ((inv_cell' * x) .* ns .+ 1))
 
 
 # ------------ The next two functions are the only dimension-dependent
@@ -232,7 +232,7 @@ function _find_neighbours_!(i, clist, ns_vec::SVec{TI}, bins, xyz_range,
    # (here, we don't yet want to wrap the pbc as well)
    ci = bin_trunc.(ci0, pbc, ns_vec)
    # dxi is the position relative to the lower left corner of the bin
-   dxi = xi - bins * (ci - 1)
+   dxi = xi - bins * (ci .- 1)
 
    # Apply periodic boundary conditions as well now
    ci = bin_wrap_or_trunc.(ci0, pbc, ns_vec)
@@ -263,7 +263,7 @@ function _find_neighbours_!(i, clist, ns_vec::SVec{TI}, bins, xyz_range,
             cj = bin_trunc.(cj, pbc, ns_vec)
 
             # drj is position relative to lower left corner of the bin
-            dxj = xj - bins * (cj - 1)
+            dxj = xj - bins * (cj .- 1)
             # Compute distance between atoms
             dx = dxj - dxi + off
             norm_dx_sq = dot(dx, dx)
