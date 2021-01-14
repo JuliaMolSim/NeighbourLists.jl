@@ -37,7 +37,7 @@ it is different. `first[m]` contains the index to the first `(i[n], j[n])` for
 which `i[n] == first[m]`, i.e., `(j, first)` essentially defines a compressed
 column storage of the adjacancy matrix.
 """
-struct PairList{T <: AbstractFloat, TI <: Integer}
+struct PairList{T <: Real, TI <: Integer}
    X::Vector{SVec{T}}
    C::SMat{T}
    cutoff::T
@@ -52,7 +52,7 @@ end
 `CellList` : store atoms in cells / bins. Mostly used internally
 to construct PairLists.
 """
-struct CellList{T <: AbstractFloat, TI <: Integer}
+struct CellList{T <: Real, TI <: Integer}
    X::Vector{SVec{T}}
    cell::SMat{T}
    inv_cell::SMat{T}
