@@ -99,8 +99,8 @@ end
 # ==================== CellList Core  ================
 
 
-function _celllist_(X::Vector{SVec{T}}, cell::SMat{T}, pbc::SVec{Bool},
-            cutoff::T, TI) where {T <: AbstractFloat}
+function _celllist_(X::Vector{<:SVec}, cell::SMat, pbc::SVec{Bool},
+            cutoff::T, TI) where {T <: Real}
    @assert TI <: Integer
    # ----- analyze cell -----
    nat = length(X)
