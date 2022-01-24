@@ -408,8 +408,16 @@ function _fix_cell_(X::Vector{SVec{T}}, C::SMat{T}, pbc) where {T}
       # the new min_lam is now zero and the new max_lam is max_lam - min_lam
       max_lam -= min_lam
       min_lam .= 0.0
+      # because of round-off we add a little extra in the non-pbc directions 
+      # it doesn't affect any energies etc but creates weirdness otherwise.
+      for i = 1:3 
+         if max_lam[i] > 1
+            max_lam[i] *= 1.01
+         end
+      end
       # we need to multiply the cell by the correct lambda
       C = hcat( max_lam[1] * C[1,:], max_lam[2] * C[2,:], max_lam[3] * C[3,:])'
+      @show C
    end
    return X, C
 end
