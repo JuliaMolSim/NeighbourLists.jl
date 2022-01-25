@@ -417,7 +417,6 @@ function _fix_cell_(X::Vector{SVec{T}}, C::SMat{T}, pbc) where {T}
       end
       # we need to multiply the cell by the correct lambda
       C = hcat( max_lam[1] * C[1,:], max_lam[2] * C[2,:], max_lam[3] * C[3,:])'
-      @show C
    end
    return X, C
 end
