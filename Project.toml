@@ -1,6 +1,6 @@
 name = "NeighbourLists"
 uuid = "2fcf5ba9-9ed4-57cf-b73f-ff513e316b9c"
-version = "0.5.4"
+version = "0.5.5"
 
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
@@ -8,6 +8,7 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
 julia = "1"
+StaticArrays = "1"
 
 [extras]
 Distances = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
