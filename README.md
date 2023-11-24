@@ -17,5 +17,24 @@ using NeighbourLists
 ?PairList
 ```
 
+### Usage via `AtomsBase.jl` 
+
+```julia
+using ASEconvert, NeighbourLists, Unitful
+cu = ase.build.bulk("Cu") * pytuple((4, 2, 3))
+sys = pyconvert(AbstractSystem, cu)
+nlist = PairList(sys, 3.5u"Å")
+neigs_1, Rs_1 = neigs(nlist, 1)
+```
+
+### Usage via `JuLIP.jl` 
+
+```julia
+using JuLIP 
+at = bulk(:Cu) * (4, 2, 3)
+nlist = neighbourlist(at, 3.5)
+neigs_1, Rs_1 = neigs(nlist, 1)
+``` 
+
 Please also look at the tests on how to use this package. Or just open an issue and
 ask.
