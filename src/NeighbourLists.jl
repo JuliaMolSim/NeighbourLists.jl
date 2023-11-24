@@ -17,5 +17,8 @@ include("iterators.jl")
 # alternative assembly protocol more akin to mapreduce
 include("mapreduce.jl")
 
+# AtomsBase interface
+include("atoms_base.jl")
+
 
 end # module

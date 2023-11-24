@@ -26,6 +26,7 @@ println("# threads = $(Base.Threads.nthreads())")
 @testset "NeighbourLists" begin
    @testset "Aux" begin include("test_aux.jl") end
    @testset "CellList" begin include("test_celllist.jl") end
+   include("test_atoms_base.jl")
 
    # pointless until we switch to comparing against ASE / matscipy
    # if hasjulip
