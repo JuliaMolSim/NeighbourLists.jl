@@ -7,7 +7,7 @@ probably due  to the overhead of dealing with Python, but on large systems it is
 tends to be slower (up to around a factor 2 for 100,000 atoms). 
 
 The package is can be used stand-alone, with
-[JuLIP.jl](https://github.com/libAtoms/JuLIP.jl), or with `[AtomsBase.jl](https://github.com/JuliaMolSim/AtomsBase.jl)`. 
+[JuLIP.jl](https://github.com/libAtoms/JuLIP.jl), or with [AtomsBase.jl](https://github.com/JuliaMolSim/AtomsBase.jl). 
 
 ## Getting Started
 
