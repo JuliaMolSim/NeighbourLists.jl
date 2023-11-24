@@ -1,6 +1,6 @@
 name = "NeighbourLists"
 uuid = "2fcf5ba9-9ed4-57cf-b73f-ff513e316b9c"
-version = "0.5.5"
+version = "0.5.6"
 
 [deps]
 AtomsBase = "a963bdd2-2df7-4f54-a1ee-49d51e6be12a"
