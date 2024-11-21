@@ -1,11 +1,11 @@
-using ASEconvert
+#using ASEconvert
+using AtomsBuilder
 using NeighbourLists
 using Test
 using Unitful
 
 @testset "AtomsBase PairList" begin
-    cu = ase.build.bulk("Cu") * pytuple((4, 2, 3))
-    sys = pyconvert(AbstractSystem, cu)
+    sys = bulk(:Cu, cubic=true) * (4,2,3)
 
     nlist = PairList(sys, 3.5u"Å")
 
