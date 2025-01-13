@@ -1,4 +1,5 @@
 [deps]
+AtomsBase = "a963bdd2-2df7-4f54-a1ee-49d51e6be12a"
 AtomsBuilder = "f5cc8831-eeb7-4288-8d9f-d6c1ddb77004"
 Distances = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
