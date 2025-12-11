@@ -28,7 +28,6 @@ julia = "1.9"
 
 [extras]
 AtomsBuilder = "f5cc8831-eeb7-4288-8d9f-d6c1ddb77004"
-CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 Distances = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 NearestNeighbors = "b8a86587-4115-5ab1-83bc-aa920d37bbce"
@@ -36,4 +35,4 @@ Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test", "Distances", "ForwardDiff", "NearestNeighbors", "Printf", "CUDA", "AtomsBuilder"]
+test = ["Test", "Distances", "ForwardDiff", "NearestNeighbors", "Printf", "AtomsBuilder"]
