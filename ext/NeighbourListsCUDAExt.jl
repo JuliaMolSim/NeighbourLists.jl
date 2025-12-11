@@ -14,7 +14,7 @@ using LinearAlgebra: dot
 """
 Compute cell IDs on GPU using a kernel.
 """
-function NeighbourLists._compute_cell_ids(X::CuVector{SVec{T}}, inv_cell::SMat{T},
+function NeighbourLists._compute_cell_ids(X::CuArray{<:SVec{T}}, inv_cell::SMat{T},
                                           ncells::SVec{TI}, pbc::SVec{Bool},
                                           ::Type{TI}) where {T, TI}
     nat = length(X)
@@ -35,7 +35,7 @@ end
 Compute CSR-style offsets from sorted cell IDs on GPU.
 Uses GPU-friendly histogram and prefix sum.
 """
-function NeighbourLists._compute_cell_offsets(sorted_cell_ids::CuVector{TI},
+function NeighbourLists._compute_cell_offsets(sorted_cell_ids::CuArray{TI},
                                                ncells_total::Integer, ::Type{TI}) where TI
     nat = length(sorted_cell_ids)
     # +1 for sentinel at end
@@ -80,7 +80,7 @@ end
 """
 GPU-accelerated sortperm using CUDA's sort_by_key.
 """
-function NeighbourLists._get_sortperm(cell_ids::CuVector{TI}, backend) where TI
+function NeighbourLists._get_sortperm(cell_ids::CuArray{TI}, backend) where TI
     n = length(cell_ids)
     # Create permutation array
     perm = CuArray{TI}(1:n)
@@ -109,7 +109,7 @@ Given counts[i] = number of neighbours for atom i,
 returns offsets where offsets[i] = 1 + sum(counts[1:i-1])
 so that pairs for atom i are stored at indices offsets[i]:offsets[i+1]-1
 """
-function NeighbourLists.compute_pair_offsets_gpu(counts::CuVector{TI}) where TI
+function NeighbourLists.compute_pair_offsets_gpu(counts::CuArray{TI}) where TI
     n = length(counts)
 
     # Allocate offsets array (n+1 elements for CSR format)
