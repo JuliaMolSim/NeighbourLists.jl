@@ -30,4 +30,5 @@ println("# CUDA available = $(cuda_available)")
    @testset "SortBased" begin include("test_sortbased.jl") end
    include("test_atoms_base.jl")
    @testset "GPU" begin include("test_gpu.jl") end
+   @testset "Matscipy" begin include("test_matscipy.jl") end
 end
