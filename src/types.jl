@@ -23,15 +23,23 @@ PairList(sys::AbstractSystem, cutoff; backend=CPU())
 - `i, j` : pair indices, `(i[n], j[n])` is a neighbour pair
 - `S` : cell shift vectors for periodic images
 - `first` : CSR-like offsets, `first[m]:first[m+1]-1` are pairs for atom m
+
+### Type Parameters
+- `T` : floating point type for positions
+- `TI` : integer type for indices
+- `AT` : array type for positions (Vector or CuVector)
+- `VI` : array type for integer indices
+- `VS` : array type for shift vectors
 """
-struct PairList{T <: Real, TI <: Integer, AT <: AbstractVector}
+struct PairList{T <: Real, TI <: Integer, AT <: AbstractVector,
+                VI <: AbstractVector{TI}, VS <: AbstractVector{SVec{TI}}}
    X::AT                        # Vector{SVec{T}} or CuVector{SVec{T}}
    C::SMat{T}
    cutoff::T
-   i::AbstractVector{TI}
-   j::AbstractVector{TI}
-   S::AbstractVector{SVec{TI}}
-   first::AbstractVector{TI}
+   i::VI
+   j::VI
+   S::VS
+   first::VI
 end
 
 
@@ -52,13 +60,19 @@ Atoms are sorted by their cell ID, enabling coalesced memory access.
 - `cutoff` : cutoff distance
 - `ncells` : number of cells in each dimension
 - `ncells_total` : total number of cells
+
+### Type Parameters
+- `T` : floating point type for positions
+- `TI` : integer type for indices
+- `AT` : array type for positions (Vector or CuVector)
+- `VI` : array type for integer indices
 """
-struct SortedCellList{T <: Real, TI <: Integer, AT <: AbstractVector}
+struct SortedCellList{T <: Real, TI <: Integer, AT <: AbstractVector, VI <: AbstractVector{TI}}
     X::AT                           # Positions sorted by cell (Vector{SVec{T}} or GPU)
     X_orig::AT                      # Original unsorted positions
-    perm::AbstractVector{TI}        # sorted index → original index
-    cell_id::AbstractVector{TI}     # Cell ID for each atom (sorted order)
-    cell_offsets::AbstractVector{TI} # cell_offsets[c]:cell_offsets[c+1]-1 = atoms in cell c
+    perm::VI                        # sorted index → original index
+    cell_id::VI                     # Cell ID for each atom (sorted order)
+    cell_offsets::VI                # cell_offsets[c]:cell_offsets[c+1]-1 = atoms in cell c
     cell::SMat{T}
     inv_cell::SMat{T}
     pbc::SVec{Bool}

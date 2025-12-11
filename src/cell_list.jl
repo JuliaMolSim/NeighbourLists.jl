@@ -9,7 +9,7 @@ PairList(X::Vector{SVec{T}}, cutoff::AbstractFloat, cell::AbstractMatrix, pbc;
               fixcell)
 
 PairList(X::Matrix{T}, args...; kwargs...) where {T} =
-   PairList(reinterpret(SVec{T}, X, (size(X,2),)), args...; varargs...)
+   PairList(reinterpret(SVec{T}, X, (size(X,2),)), args...; kwargs...)
 
 npairs(nlist::PairList) = length(nlist.i)
 nsites(nlist::PairList) = length(nlist.first) - 1
@@ -298,7 +298,7 @@ function _pairlist_(X::Vector{SVec{T}}, cell::SMat{T}, pbc::SVec{Bool},
    first = get_first(i, length(X))
    sort_neigs!(j, (S,), first)
 
-   return PairList{T, TI, Vector{SVec{T}}}(X, cell, cutoff, i, j, S, first)
+   return PairList{T, TI, Vector{SVec{T}}, Vector{TI}, Vector{SVec{TI}}}(X, cell, cutoff, i, j, S, first)
 end
 
 
@@ -584,7 +584,7 @@ function _build_sorted_celllist(X::AbstractVector{SVec{T}}, cell::SMat{T},
     # Step 3: Compute cell offsets (CSR-style)
     cell_offsets = _compute_cell_offsets(sorted_cell_ids, ncells_total, TI)
 
-    return SortedCellList{T, TI, typeof(X)}(
+    return SortedCellList{T, TI, typeof(X), typeof(perm)}(
         sorted_X, X, perm, sorted_cell_ids, cell_offsets,
         cell, inv_cell, pbc, cutoff, ncells_vec, ncells_total
     )
@@ -891,7 +891,8 @@ function materialize_pairlist(clist::SortedCellList{T, TI};
     resize!(j_arr, total_pairs)
     resize!(S_arr, total_pairs)
 
-    return PairList{T, TI, typeof(clist.X_orig)}(clist.X_orig, clist.cell, clist.cutoff,
+    return PairList{T, TI, typeof(clist.X_orig), Vector{TI}, Vector{SVec{TI}}}(
+                    clist.X_orig, clist.cell, clist.cutoff,
                     i_arr, j_arr, S_arr, first)
 end
 

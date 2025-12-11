@@ -111,7 +111,7 @@ end
 
 # ==================== KernelAbstractions-based operations ====================
 
-export map_sites!, map_pairs!
+export map_sites!, map_pairs!, map_pairs_d!
 
 """
     map_sites!(f, out, clist::SortedCellList)

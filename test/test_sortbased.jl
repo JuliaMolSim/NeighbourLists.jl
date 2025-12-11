@@ -393,3 +393,90 @@ end
         @test compare_pairlists(nlist_legacy, nlist_sort)
     end
 end
+
+@testset "get_neighbours Function" begin
+    N = 50
+    X, C, L = rand_config_sortbased(N)
+    cutoff = L / 3
+    pbc = SVec(true, true, true)
+
+    clist = build_cell_list(X, cutoff, C, pbc; backend=CPU())
+
+    for i in 1:10  # Test first 10 atoms
+        js, Rs, Ss = get_neighbours(clist, i)
+
+        # Verify consistency with for_each_neighbour
+        js_lazy = Int32[]
+        Rs_lazy = SVec{Float64}[]
+        Ss_lazy = SVec{Int32}[]
+        for_each_neighbour(clist, i) do j, R, S
+            push!(js_lazy, j)
+            push!(Rs_lazy, R)
+            push!(Ss_lazy, S)
+        end
+
+        @test sort(js) == sort(js_lazy)
+        @test length(Rs) == length(Rs_lazy)
+    end
+end
+
+@testset "count_neighbours Function" begin
+    N = 50
+    X, C, L = rand_config_sortbased(N)
+    cutoff = L / 3
+    pbc = SVec(true, true, true)
+
+    clist = build_cell_list(X, cutoff, C, pbc; backend=CPU())
+    nlist = materialize_pairlist(clist)
+
+    # Count from PairList for reference
+    expected_counts = zeros(Int, N)
+    for idx in 1:npairs(nlist)
+        expected_counts[nlist.i[idx]] += 1
+    end
+
+    # Compare with count_neighbours
+    for i in 1:N
+        @test count_neighbours(clist, i) == expected_counts[i]
+    end
+end
+
+@testset "map_pairs! with symmetric=false" begin
+    N = 100
+    X, C, L = rand_config_sortbased(N)
+    cutoff = L / 3
+    pbc = SVec(true, true, true)
+
+    clist = build_cell_list(X, cutoff, C, pbc; backend=CPU())
+    nlist = materialize_pairlist(clist)
+
+    # Non-symmetric: each pair (i,j) only contributes to site i
+    out = zeros(Float64, N)
+    map_pairs!((i, j, R) -> 1.0, out, nlist; symmetric=false)
+
+    # Expected: count of pairs where i is the first index
+    expected = zeros(Float64, N)
+    for idx in 1:npairs(nlist)
+        expected[nlist.i[idx]] += 1.0
+    end
+
+    @test out == expected
+end
+
+@testset "map_pairs_d! Function" begin
+    N = 100
+    X, C, L = rand_config_sortbased(N)
+    cutoff = L / 3
+    pbc = SVec(true, true, true)
+
+    clist = build_cell_list(X, cutoff, C, pbc; backend=CPU())
+    nlist = materialize_pairlist(clist)
+
+    # Anti-symmetric mapping: force-like
+    out = zeros(SVec{Float64}, N)
+    map_pairs_d!((i, j, R) -> R / norm(R), out, nlist)
+
+    # Verify anti-symmetry: sum should be approximately zero
+    total = sum(out)
+    @test norm(total) < 1e-10
+end

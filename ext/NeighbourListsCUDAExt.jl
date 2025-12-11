@@ -78,23 +78,16 @@ end
 # ==================== GPU Sorting ====================
 
 """
-GPU-accelerated sortperm using CUDA's sort_by_key.
+    _get_sortperm(cell_ids::CuArray{TI}, backend) -> CuArray{TI}
+
+GPU-accelerated sortperm for cell IDs using CUDA.jl's native bitonic sort.
 """
 function NeighbourLists._get_sortperm(cell_ids::CuArray{TI}, backend) where TI
     n = length(cell_ids)
-    # Create permutation array
-    perm = CuArray{TI}(1:n)
-    # Copy cell_ids for sorting (sort_by_key! modifies in place)
-    sorted_ids = copy(cell_ids)
+    perm = CuArray{TI}(undef, n)
 
-    # Sort permutation by cell_ids using CUDA's efficient sort
-    CUDA.@sync begin
-        # sortperm on GPU - use CPU fallback for now, can optimize later
-        # TODO: Use CUDA.jl's sort_by_key! when stable API available
-        cpu_ids = Array(cell_ids)
-        cpu_perm = sortperm(cpu_ids)
-        copyto!(perm, CuArray(TI.(cpu_perm)))
-    end
+    # Use CUDA.jl's native GPU sortperm (bitonic sort, available since CUDA.jl 5.x)
+    sortperm!(perm, cell_ids)
 
     return perm
 end
@@ -138,8 +131,8 @@ GPU implementation of materialize_pairlist using two-kernel approach.
 2. Compute offsets via prefix sum
 3. Fill pair arrays (parallel kernel)
 """
-function NeighbourLists._materialize_pairlist_gpu(clist::SortedCellList{T, TI, AT},
-                                                   backend) where {T, TI, AT <: CuArray}
+function NeighbourLists._materialize_pairlist_gpu(clist::SortedCellList{T, TI, AT, VI},
+                                                   backend) where {T, TI, AT <: CuArray, VI}
     nat = nsites(clist)
 
     # Compute how many cells to check in each direction
@@ -166,7 +159,8 @@ function NeighbourLists._materialize_pairlist_gpu(clist::SortedCellList{T, TI, A
         j_arr = CUDA.zeros(TI, 0)
         S_arr = CuArray{SVec{TI}}(undef, 0)
         first_arr = CUDA.ones(TI, nat + 1)
-        return PairList{T, TI, AT}(clist.X_orig, clist.cell, clist.cutoff,
+        return PairList{T, TI, AT, CuVector{TI}, CuVector{SVec{TI}}}(
+                                   clist.X_orig, clist.cell, clist.cutoff,
                                    i_arr, j_arr, S_arr, first_arr)
     end
 
@@ -185,7 +179,8 @@ function NeighbourLists._materialize_pairlist_gpu(clist::SortedCellList{T, TI, A
     # Use offsets as the first array (already in correct CSR format)
     first_arr = offsets[1:nat+1]
 
-    return PairList{T, TI, AT}(clist.X_orig, clist.cell, clist.cutoff,
+    return PairList{T, TI, AT, CuVector{TI}, CuVector{SVec{TI}}}(
+                               clist.X_orig, clist.cell, clist.cutoff,
                                i_arr, j_arr, S_arr, first_arr)
 end
 
@@ -212,8 +207,8 @@ end
 # ==================== GPU materialize_pairlist dispatch ====================
 
 # This method catches CuArray-based cell lists and dispatches to GPU implementation
-function NeighbourLists.materialize_pairlist(clist::SortedCellList{T, TI, AT};
-                                              backend = get_backend(clist.X_orig)) where {T, TI, AT <: CuArray}
+function NeighbourLists.materialize_pairlist(clist::SortedCellList{T, TI, AT, VI};
+                                              backend = get_backend(clist.X_orig)) where {T, TI, AT <: CuArray, VI}
     return NeighbourLists._materialize_pairlist_gpu(clist, backend)
 end
 
