@@ -842,58 +842,66 @@ end
 
 Convert a SortedCellList to a PairList by computing all pairs.
 
-Uses a single-pass algorithm with dynamic array growth for efficiency.
+Uses a two-pass algorithm for parallelization:
+1. Count neighbours per atom (parallel with KernelAbstractions)
+2. Fill pair arrays (parallel with KernelAbstractions)
+
+This approach enables multi-threaded CPU execution via KernelAbstractions.
 """
 function materialize_pairlist(clist::SortedCellList{T, TI, <:Vector};
                               backend = default_backend()) where {T, TI}
     nat = nsites(clist)
 
-    # Estimate pairs based on cutoff and density
-    # For typical atomic systems: ~4π/3 * rcut³ * ρ neighbors per atom
-    volume = abs(det(clist.cell))
-    density = nat / volume
-    estimated_neigs_per_atom = ceil(TI, 4.5 * density * clist.cutoff^3)  # Slight overestimate
-    initial_size = max(nat * estimated_neigs_per_atom, TI(1000))
-
-    # Pre-allocate with estimate
-    i_arr = Vector{TI}(undef, initial_size)
-    j_arr = Vector{TI}(undef, initial_size)
-    S_arr = Vector{SVec{TI}}(undef, initial_size)
-    first = Vector{TI}(undef, nat + 1)
-
-    # Single pass: collect pairs and track offsets
-    idx = one(TI)
-    capacity = initial_size
-
-    for i in 1:nat
-        first[i] = idx
-        for_each_neighbour(clist, i) do j, R, S
-            # Grow arrays if needed
-            if idx > capacity
-                new_capacity = capacity + (capacity >> 1)  # 1.5x growth
-                resize!(i_arr, new_capacity)
-                resize!(j_arr, new_capacity)
-                resize!(S_arr, new_capacity)
-                capacity = new_capacity
-            end
-
-            i_arr[idx] = TI(i)
-            j_arr[idx] = TI(j)
-            S_arr[idx] = S
-            idx += one(TI)
-        end
+    if nat == 0
+        return PairList{T, TI, typeof(clist.X_orig), Vector{TI}, Vector{SVec{TI}}}(
+            clist.X_orig, clist.cell, clist.cutoff,
+            Vector{TI}(), Vector{TI}(), Vector{SVec{TI}}(), ones(TI, 1))
     end
-    first[nat + 1] = idx
 
-    # Trim to actual size
-    total_pairs = idx - one(TI)
-    resize!(i_arr, total_pairs)
-    resize!(j_arr, total_pairs)
-    resize!(S_arr, total_pairs)
+    # Compute how many cells to check in each direction
+    lens = lengths(clist.cell)
+    nxyz = ceil.(TI, clist.cutoff * (clist.ncells ./ abs.(lens)))
+    cutoff_sq = clist.cutoff^2
+
+    # ===== Pass 1: Count neighbours per atom (parallel) =====
+    counts = zeros(TI, nat)
+
+    kernel1 = count_neighbours_kernel!(backend)
+    kernel1(counts, clist.X_orig, clist.cell_offsets, clist.perm,
+            clist.inv_cell, clist.cell, clist.ncells, clist.pbc,
+            cutoff_sq, nxyz; ndrange=nat)
+    synchronize(backend)
+
+    # ===== Step 2: Compute offsets via prefix sum =====
+    offsets = Vector{TI}(undef, nat + 1)
+    offsets[1] = one(TI)
+    for i in 1:nat
+        offsets[i + 1] = offsets[i] + counts[i]
+    end
+    total_pairs = offsets[end] - one(TI)
+
+    if total_pairs == 0
+        first_arr = ones(TI, nat + 1)
+        return PairList{T, TI, typeof(clist.X_orig), Vector{TI}, Vector{SVec{TI}}}(
+            clist.X_orig, clist.cell, clist.cutoff,
+            Vector{TI}(), Vector{TI}(), Vector{SVec{TI}}(), first_arr)
+    end
+
+    # ===== Step 3: Allocate pair arrays =====
+    i_arr = Vector{TI}(undef, total_pairs)
+    j_arr = Vector{TI}(undef, total_pairs)
+    S_arr = Vector{SVec{TI}}(undef, total_pairs)
+
+    # ===== Pass 2: Fill pair arrays (parallel) =====
+    kernel2 = fill_pairs_kernel!(backend)
+    kernel2(i_arr, j_arr, S_arr, offsets, clist.X_orig, clist.cell_offsets,
+            clist.perm, clist.inv_cell, clist.cell, clist.ncells, clist.pbc,
+            cutoff_sq, nxyz; ndrange=nat)
+    synchronize(backend)
 
     return PairList{T, TI, typeof(clist.X_orig), Vector{TI}, Vector{SVec{TI}}}(
                     clist.X_orig, clist.cell, clist.cutoff,
-                    i_arr, j_arr, S_arr, first)
+                    i_arr, j_arr, S_arr, offsets)
 end
 
 

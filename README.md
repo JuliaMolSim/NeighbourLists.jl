@@ -46,19 +46,18 @@ clist = build_cell_list(X, 3.0, cell, pbc)
 nlist = materialize_pairlist(clist)
 ```
 
-The GPU implementation uses a sort-based cell list with native CUDA sorting and two-kernel pair materialization.
+The implementation uses a sort-based cell list with KernelAbstractions.jl for portable parallelism. On CPU this enables multi-threading; on GPU it uses native CUDA sorting and parallel kernels.
 
-### GPU Benchmarks
+### Benchmarks
 
-Benchmarks on NVIDIA RTX A4500 (cutoff = 5.0 Å, density = 0.05 atoms/Å³):
+Benchmarks on NVIDIA RTX A4500, 16 CPU threads (cutoff = 5.0 Å, density = 0.05 atoms/Å³):
 
-| Atoms | Pairs | CPU Time | GPU Time | Speedup |
-|------:|------:|---------:|---------:|--------:|
-| 1,000 | 26k | 5.7 ms | 2.4 ms | 2.4x |
-| 5,000 | 131k | 30.5 ms | 2.3 ms | 13x |
-| 10,000 | 263k | 61.2 ms | 2.5 ms | 25x |
-| 50,000 | 1.3M | 334 ms | 4.2 ms | 79x |
-| 100,000 | 2.6M | - | 7.6 ms | - |
-| 500,000 | 13.1M | - | 41 ms | - |
+| Atoms | Pairs | CPU (16T) | GPU | Speedup |
+|------:|------:|----------:|--------:|--------:|
+| 1,000 | 26k | 3.3 ms | 2.4 ms | 1.4x |
+| 5,000 | 130k | 4.3 ms | 2.4 ms | 1.8x |
+| 10,000 | 261k | 6.7 ms | 2.6 ms | 2.6x |
+| 50,000 | 1.3M | 26 ms | 4.4 ms | 5.8x |
+| 100,000 | 2.6M | 37 ms | 7.4 ms | 5.0x |
 
-GPU throughput: ~320-380 million pairs/second for large systems.
+GPU throughput: ~360 million pairs/second for large systems.

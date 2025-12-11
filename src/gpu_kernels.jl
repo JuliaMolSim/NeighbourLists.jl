@@ -273,8 +273,9 @@ end
 """
 Kernel for symmetric pair mapping with atomic accumulation.
 Each thread processes one pair (i,j) with i < j.
+Calls f(i, j, R) and accumulates f/2 to both sites.
 """
-@kernel function map_pairs_symmetric_kernel!(out, f_half, @Const(i_arr), @Const(j_arr),
+@kernel function map_pairs_symmetric_kernel!(f, out, @Const(i_arr), @Const(j_arr),
         @Const(X), @Const(S_arr), @Const(C))
 
     n = @index(Global, Linear)
@@ -286,21 +287,67 @@ Each thread processes one pair (i,j) with i < j.
         # Compute displacement R
         R = X[j] - X[i] + C' * S_arr[n]
 
-        # Compute value (passed as half since we add to both i and j)
-        val = f_half
+        # Compute value and divide by 2 for symmetric accumulation
+        val = f(i, j, R)
+        val_half = val / 2
 
         # Atomic accumulation to both sites
-        @atomic out[i] += val
-        @atomic out[j] += val
+        @atomic out[i] += val_half
+        @atomic out[j] += val_half
     end
 end
 
 
 """
-Kernel for anti-symmetric pair mapping (force-like).
+Kernel for non-symmetric pair mapping with atomic accumulation.
+Each thread processes one pair, accumulating to site i only.
+"""
+@kernel function map_pairs_nonsym_kernel!(f, out, @Const(i_arr), @Const(j_arr),
+        @Const(X), @Const(S_arr), @Const(C))
+
+    n = @index(Global, Linear)
+
+    i, j = i_arr[n], j_arr[n]
+
+    # Compute displacement R
+    R = X[j] - X[i] + C' * S_arr[n]
+
+    # Compute value and accumulate to site i
+    val = f(i, j, R)
+
+    @atomic out[i] += val
+end
+
+
+"""
+Kernel for anti-symmetric pair mapping (force-like) - scalar version.
 Adds +f to site j and -f to site i.
 """
-@kernel function map_pairs_antisym_kernel!(out, f_val, @Const(i_arr), @Const(j_arr),
+@kernel function map_pairs_antisym_kernel!(f, out::AbstractVector{T}, @Const(i_arr), @Const(j_arr),
+        @Const(X), @Const(S_arr), @Const(C)) where {T<:Real}
+
+    n = @index(Global, Linear)
+
+    i, j = i_arr[n], j_arr[n]
+
+    if i < j
+        R = X[j] - X[i] + C' * S_arr[n]
+
+        val = f(i, j, R)
+
+        @atomic out[j] += val
+        @atomic out[i] -= val
+    end
+end
+
+"""
+Kernel for anti-symmetric pair mapping (force-like) - 3D vector version.
+Uses a flat (3, N) array layout for GPU-friendly atomic operations.
+Adds +f to site j and -f to site i.
+
+Note: `out_flat` should be a (3, N) matrix where column i holds the 3D vector for atom i.
+"""
+@kernel function map_pairs_antisym_vec_kernel!(f, out_flat, @Const(i_arr), @Const(j_arr),
         @Const(X), @Const(S_arr), @Const(C))
 
     n = @index(Global, Linear)
@@ -310,10 +357,23 @@ Adds +f to site j and -f to site i.
     if i < j
         R = X[j] - X[i] + C' * S_arr[n]
 
-        @atomic out[j] += f_val
-        @atomic out[i] -= f_val
+        val = f(i, j, R)
+
+        # Component-wise atomic operations on flat array
+        @atomic out_flat[1, j] += val[1]
+        @atomic out_flat[2, j] += val[2]
+        @atomic out_flat[3, j] += val[3]
+        @atomic out_flat[1, i] -= val[1]
+        @atomic out_flat[2, i] -= val[2]
+        @atomic out_flat[3, i] -= val[3]
     end
 end
+
+
+# Note: map_sites! is not implemented as a GPU kernel because the standard API
+# f(Rs) expects a dynamically-sized vector of displacement vectors, which is
+# incompatible with GPU execution. For GPU workflows, use map_pairs! or
+# map_pairs_d! which operate on individual pairs and are fully GPU-accelerated.
 
 
 # ==================== Extension Points ====================
