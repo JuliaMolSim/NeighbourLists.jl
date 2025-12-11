@@ -34,7 +34,7 @@ ask.
 GPU-accelerated neighbour list construction is available via CUDA.jl. When CUDA is loaded, the package automatically uses GPU kernels for systems stored on the GPU:
 
 ```julia
-using NeighbourLists, CUDA, StaticArrays
+using LineaAlgebra, NeighbourLists, CUDA, StaticArrays
 
 # Create positions on GPU
 X = CuArray([SVector{3,Float64}(rand(3)...) for _ in 1:10000])
