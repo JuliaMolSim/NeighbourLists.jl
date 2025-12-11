@@ -844,7 +844,7 @@ Convert a SortedCellList to a PairList by computing all pairs.
 
 Uses a single-pass algorithm with dynamic array growth for efficiency.
 """
-function materialize_pairlist(clist::SortedCellList{T, TI};
+function materialize_pairlist(clist::SortedCellList{T, TI, <:Vector};
                               backend = default_backend()) where {T, TI}
     nat = nsites(clist)
 
