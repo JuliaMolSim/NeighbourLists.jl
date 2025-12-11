@@ -269,6 +269,93 @@ if pythoncall_available
                 @test compare_with_matscipy(nlist_legacy, i_ms, j_ms, S_ms)
             end
 
+            @testset "GPU vs Matscipy" begin
+                # Check if CUDA is available
+                cuda_available = false
+                try
+                    using CUDA
+                    cuda_available = CUDA.functional()
+                catch
+                end
+
+                if cuda_available
+                    @info "CUDA available, running GPU vs matscipy validation"
+
+                    @testset "GPU Basic Validation" begin
+                        N = 100
+                        X, C, L = rand_config_matscipy(N)
+                        cutoff = L / 3
+                        pbc = SVec(true, true, true)
+
+                        # GPU implementation
+                        X_gpu = CuArray(X)
+                        clist_gpu = build_cell_list(X_gpu, cutoff, C, pbc)
+                        nlist_gpu = materialize_pairlist(clist_gpu)
+
+                        # Convert GPU arrays to CPU for comparison
+                        nlist_gpu_cpu = (
+                            i = Array(nlist_gpu.i),
+                            j = Array(nlist_gpu.j),
+                            S = Array(nlist_gpu.S)
+                        )
+
+                        # Matscipy
+                        i_ms, j_ms, S_ms = matscipy_neighbourlist(X, C, pbc, cutoff)
+
+                        @test length(nlist_gpu_cpu.i) == length(i_ms)
+
+                        # Build sets for comparison
+                        gpu_pairs = Set{Tuple{Int, Int, Tuple{Int,Int,Int}}}()
+                        for idx in 1:length(nlist_gpu_cpu.i)
+                            push!(gpu_pairs, (nlist_gpu_cpu.i[idx], nlist_gpu_cpu.j[idx], Tuple(nlist_gpu_cpu.S[idx])))
+                        end
+
+                        ms_pairs = Set{Tuple{Int, Int, Tuple{Int,Int,Int}}}()
+                        for idx in 1:length(i_ms)
+                            push!(ms_pairs, (i_ms[idx], j_ms[idx], Tuple(S_ms[idx])))
+                        end
+
+                        @test gpu_pairs == ms_pairs
+                    end
+
+                    @testset "GPU Multiple Configurations" begin
+                        for trial in 1:5
+                            N = rand(50:150)
+                            X, C, L = rand_config_matscipy(N)
+                            cutoff = L / 4 + rand() * L / 4
+                            pbc = SVec(rand(Bool), rand(Bool), rand(Bool))
+
+                            # GPU implementation
+                            X_gpu = CuArray(X)
+                            clist_gpu = build_cell_list(X_gpu, cutoff, C, pbc)
+                            nlist_gpu = materialize_pairlist(clist_gpu)
+
+                            # Matscipy
+                            i_ms, j_ms, S_ms = matscipy_neighbourlist(X, C, pbc, cutoff)
+
+                            @test length(nlist_gpu.i) == length(i_ms)
+                        end
+                    end
+
+                    @testset "GPU Larger System" begin
+                        N = 500
+                        X, C, L = rand_config_matscipy(N)
+                        cutoff = L / 4
+                        pbc = SVec(true, true, true)
+
+                        X_gpu = CuArray(X)
+                        clist_gpu = build_cell_list(X_gpu, cutoff, C, pbc)
+                        nlist_gpu = materialize_pairlist(clist_gpu)
+
+                        i_ms, j_ms, S_ms = matscipy_neighbourlist(X, C, pbc, cutoff)
+
+                        @test length(nlist_gpu.i) == length(i_ms)
+                    end
+                else
+                    @test_skip "CUDA not available - skipping GPU vs matscipy validation"
+                end
+            end
+
         end
 
     else
