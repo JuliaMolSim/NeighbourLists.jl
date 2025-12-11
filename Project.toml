@@ -1,21 +1,34 @@
 name = "NeighbourLists"
 uuid = "2fcf5ba9-9ed4-57cf-b73f-ff513e316b9c"
-version = "0.5.10"
+version = "0.6.0"
 
 [deps]
+Atomix = "a9b6321e-bd34-4604-b9c9-b65b8de01458"
 AtomsBase = "a963bdd2-2df7-4f54-a1ee-49d51e6be12a"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 
+[weakdeps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+
+[extensions]
+NeighbourListsCUDAExt = "CUDA"
+
 [compat]
-julia = "1"
-StaticArrays = "1"
+Atomix = "0.1, 1"
 AtomsBase = "0.5"
+CUDA = "5"
+KernelAbstractions = "0.9"
 LinearAlgebra = "1"
+StaticArrays = "1"
 Unitful = "1"
+julia = "1.9"
 
 [extras]
+AtomsBuilder = "f5cc8831-eeb7-4288-8d9f-d6c1ddb77004"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 Distances = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 NearestNeighbors = "b8a86587-4115-5ab1-83bc-aa920d37bbce"
@@ -23,4 +36,4 @@ Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test", "Distances", "ForwardDiff", "NearestNeighbors", "Printf"]
+test = ["Test", "Distances", "ForwardDiff", "NearestNeighbors", "Printf", "CUDA", "AtomsBuilder"]
