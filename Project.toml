@@ -26,7 +26,7 @@ LinearAlgebra = "1"
 PythonCall = "0.9"
 StaticArrays = "1"
 Unitful = "1"
-julia = "1.9"
+julia = "1.11"
 
 [extras]
 AtomsBuilder = "f5cc8831-eeb7-4288-8d9f-d6c1ddb77004"
