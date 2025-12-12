@@ -29,25 +29,51 @@ neigs_1, Rs_1 = neigs(nlist, 1)
 Please also look at the tests on how to use this package. Or just open an issue and
 ask.
 
-## GPU Support
+## Sort-Based API (CPU and GPU)
 
-GPU-accelerated neighbour list construction is available via CUDA.jl. When CUDA is loaded, the package automatically uses GPU kernels for systems stored on the GPU:
+The package provides a unified sort-based cell list that works on both CPU and GPU with the same API. The backend is automatically detected from the array type.
+
+### CPU Example (Multi-threaded)
 
 ```julia
-using LinearAlgebra, NeighbourLists, CUDA, StaticArrays
+using NeighbourLists, StaticArrays, LinearAlgebra
 
-# Create positions on GPU
+# Create positions (CPU Vector)
+L = 10.0
+X = [SVector{3,Float64}(L*rand(), L*rand(), L*rand()) for _ in 1:10000]
+cell = SMatrix{3,3,Float64}(L*I)
+pbc = SVector{3,Bool}(true, true, true)
+
+# Build cell list and materialize pairs
+clist = build_cell_list(X, 3.0, cell, pbc)
+nlist = materialize_pairlist(clist)
+
+# Access neighbours of atom 1
+j, R = neigs(nlist, 1)
+```
+
+### GPU Example (CUDA, ROCm, Metal, oneAPI)
+
+```julia
+using NeighbourLists, StaticArrays, LinearAlgebra
+using CUDA  # or AMDGPU, Metal, oneAPI
+
+# Create positions on GPU (only difference: use CuArray)
 L = 10.0
 X = CuArray([SVector{3,Float64}(L*rand(), L*rand(), L*rand()) for _ in 1:10000])
 cell = SMatrix{3,3,Float64}(L*I)
 pbc = SVector{3,Bool}(true, true, true)
 
-# Build cell list and materialize pairs (runs on GPU)
+# Same API - backend auto-detected from array type
 clist = build_cell_list(X, 3.0, cell, pbc)
 nlist = materialize_pairlist(clist)
 ```
 
-The implementation uses a sort-based cell list with KernelAbstractions.jl for portable parallelism. On CPU this enables multi-threading; on GPU it uses native CUDA sorting and parallel kernels.
+**What's the same:** The `build_cell_list` and `materialize_pairlist` API is identical. Cell matrix, cutoff, and boundary conditions work the same way.
+
+**What's different:** Only the array type changes (`Vector` vs `CuArray`/`ROCArray`/etc.). The backend is automatically detected - no need to specify it manually.
+
+The implementation uses [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl) for portable parallelism and [AcceleratedKernels.jl](https://github.com/JuliaGPU/AcceleratedKernels.jl) for portable sorting. On CPU this enables multi-threading; on GPU it runs native parallel kernels.
 
 ### Benchmarks
 
