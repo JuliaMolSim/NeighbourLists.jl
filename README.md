@@ -97,17 +97,17 @@ The implementation uses [KernelAbstractions.jl](https://github.com/JuliaGPU/Kern
 
 Benchmarks on NVIDIA RTX A4500 (cutoff = 5.0 Å, density = 0.05 atoms/Å³):
 
-| Atoms | Pairs | CPU (1T) | CPU (16T) | GPU | GPU Speedup |
-|------:|------:|---------:|----------:|--------:|------------:|
-| 1,000 | 26k | 8 ms | 3.3 ms | 2.4 ms | 3.3x |
-| 5,000 | 130k | 41 ms | 4.3 ms | 2.4 ms | 17x |
-| 10,000 | 261k | 82 ms | 6.7 ms | 2.6 ms | 32x |
-| 50,000 | 1.3M | 430 ms | 26 ms | 4.4 ms | 98x |
-| 100,000 | 2.6M | 880 ms | 37 ms | 7.4 ms | 119x |
+| Atoms | Pairs | Legacy | CPU (1T) | CPU (8T) | GPU | Speedup |
+|------:|------:|-------:|---------:|---------:|--------:|--------:|
+| 1,000 | 26k | 8 ms | 3.6 ms | 3.4 ms | 2.3 ms | 3.5x |
+| 5,000 | 131k | 38 ms | 17 ms | 3.9 ms | 2.2 ms | 17x |
+| 10,000 | 262k | 84 ms | 35 ms | 7.8 ms | 2.4 ms | 36x |
+| 50,000 | 1.3M | 516 ms | 201 ms | 31 ms | 4.2 ms | 124x |
+| 100,000 | 2.6M | 1.1 s | 400 ms | 62 ms | 6.9 ms | 160x |
 
-GPU throughput: ~360 million pairs/second for large systems.
+GPU throughput: ~370 million pairs/second for large systems.
 
-*Note: GPU speedup is relative to CPU (1T). Run `scripts/benchmark.jl` with `-t 1` and `-t 16` to reproduce.*
+*Note: Speedup is GPU vs Legacy. Run `julia --project -t N scripts/benchmark.jl` to reproduce.*
 
 
 ### Acknowledgements
