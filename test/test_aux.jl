@@ -7,7 +7,7 @@ using Test, StaticArrays, ForwardDiff
 # ------ generate random configurations -------
 
 
-function rand_config(N)
+function rand_config_aux(N)
    C = SMat( diagm(0 => 2.0 .+ 0.2 * rand(3)) * N )
    X = [ C' * rand(SVec)   for i = 1:ceil(Int, abs(det(C))) ÷ 4 + 2 ]
    pbc = SVec(rand(Bool, 3))

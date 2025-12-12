@@ -1,6 +1,9 @@
 using NeighbourLists
 using Test
 
+# Include shared test utilities
+include("test_utils.jl")
+
 # ---- FLAGS -----
 
 # whether to run performance tests
@@ -11,13 +14,7 @@ isCI = haskey(ENV, "CI")
 notCI = !isCI
 
 # Check for CUDA availability (for GPU tests)
-cuda_available = false
-try
-   using CUDA
-   global cuda_available = CUDA.functional()
-catch
-   # CUDA not available
-end
+cuda_available = check_cuda_available()
 
 # ----------------- TESTS -------------------
 

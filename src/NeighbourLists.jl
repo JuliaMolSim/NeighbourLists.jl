@@ -34,8 +34,7 @@ include("iterators.jl")
 # alternative assembly protocol more akin to mapreduce
 include("mapreduce.jl")
 
-# AtomsBase interface
-include("atoms_base.jl")
-
+# AtomsBase interface is provided via extension: ext/NeighbourListsAtomsBaseExt.jl
+# CUDA support is provided via extension: ext/NeighbourListsCUDAExt.jl
 
 end # module

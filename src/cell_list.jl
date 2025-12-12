@@ -3,10 +3,18 @@ using Base.Threads, LinearAlgebra
 export npairs, nsites, maxneigs, max_neighbours, neigs, neighbours, neigs!
 export build_cell_list, materialize_pairlist, for_each_neighbour, get_neighbours, count_neighbours
 
-PairList(X::Vector{SVec{T}}, cutoff::AbstractFloat, cell::AbstractMatrix, pbc;
-            int_type::Type = Int32, fixcell = true) where {T} =
-   _pairlist_(X, SMat{T}(cell), SVec{Bool}(pbc), T(cutoff), int_type,
-              fixcell)
+# Legacy linked-list constructor - DEPRECATED in v0.6, will be removed in v0.7
+# Use `neighbour_list(X, cutoff, cell, pbc)` or `PairList(X::AbstractVector, cutoff, cell, pbc; backend=CPU())`
+function PairList(X::Vector{SVec{T}}, cutoff::AbstractFloat, cell::AbstractMatrix, pbc;
+            int_type::Type = Int32, fixcell = true) where {T}
+   Base.depwarn(
+       "PairList(X::Vector{SVec}, ...) using linked-list algorithm is deprecated. " *
+       "Use `neighbour_list(X, cutoff, cell, pbc)` or the sort-based constructor instead. " *
+       "The linked-list implementation will be removed in v0.7.",
+       :PairList
+   )
+   _pairlist_(X, SMat{T}(cell), SVec{Bool}(pbc), T(cutoff), int_type, fixcell)
+end
 
 PairList(X::Matrix{T}, args...; kwargs...) where {T} =
    PairList(reinterpret(SVec{T}, X, (size(X,2),)), args...; kwargs...)
@@ -579,9 +587,12 @@ neigss(nlist::PairList{T}, i0::Integer) where {T} =
       neigss!( zeros(SVec{T}, nneigs(nlist, i0)), nlist, i0 )
 
 """
-alias for `neigs`
+    neighbours(nlist::PairList, i) -> (j_indices, R_vectors, S_vectors)
+
+Get all neighbours of atom `i` from a PairList.
+Alias for `neigs`. Also works with `SortedCellList`.
 """
-neighbours = neigs
+neighbours(nlist::PairList, args...) = neigs(nlist, args...)
 
 """
 alias for `max_neigs`
@@ -999,3 +1010,63 @@ function PairList(X::AbstractVector{<:SVec}, cutoff::Real,
                             int_type=int_type, backend=backend)
     return materialize_pairlist(clist; backend=backend)
 end
+
+# ====================== Unified High-Level API ======================
+
+export neighbour_list, num_neighbours
+
+"""
+    neighbour_list(X, cutoff, cell, pbc; backend=CPU(), lazy=false, int_type=Int32)
+
+Unified entry point for building neighbour lists.
+
+Returns a `PairList` by default. If `lazy=true`, returns a `SortedCellList`
+that can be iterated without materializing all pairs (memory efficient).
+
+# Arguments
+- `X`: Vector of positions (SVec)
+- `cutoff`: Cutoff distance
+- `cell`: Cell matrix (3×3)
+- `pbc`: Periodic boundary conditions (SVec{Bool} or tuple)
+
+# Keyword arguments
+- `backend`: Computation backend (default: auto-detected from X, or CPU())
+- `lazy`: If true, return SortedCellList instead of materializing pairs
+- `int_type`: Integer type for indices (default: Int32)
+
+# Examples
+```julia
+# Materialized pair list (default)
+nlist = neighbour_list(X, cutoff, cell, pbc)
+
+# Lazy cell list (memory efficient for iteration)
+clist = neighbour_list(X, cutoff, cell, pbc; lazy=true)
+for i in 1:nsites(clist)
+    for_each_neighbour(clist, i) do j, R, S
+        # process neighbour
+    end
+end
+```
+"""
+function neighbour_list(X::AbstractVector{<:SVec}, cutoff::Real,
+                        cell::AbstractMatrix, pbc;
+                        backend = get_array_backend(X),
+                        lazy::Bool = false,
+                        int_type::Type = Int32)
+    clist = build_cell_list(X, cutoff, cell, pbc;
+                            int_type=int_type, backend=backend)
+    return lazy ? clist : materialize_pairlist(clist; backend=backend)
+end
+
+# Extend neighbours (alias for neigs) to work with SortedCellList
+neighbours(clist::SortedCellList, i::Integer) = get_neighbours(clist, i)
+
+"""
+    num_neighbours(nlist_or_clist, i)
+
+Count the number of neighbours of atom `i`.
+
+Works with both `PairList` and `SortedCellList`.
+"""
+num_neighbours(nlist::PairList, i::Integer) = nneigs(nlist, i)
+num_neighbours(clist::SortedCellList, i::Integer) = count_neighbours(clist, i)

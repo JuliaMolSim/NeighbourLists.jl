@@ -47,6 +47,15 @@ catch
     using BenchmarkTools
 end
 
+# Check for PrettyTables
+try
+    using PrettyTables
+catch
+    println("Installing PrettyTables...")
+    Pkg.add("PrettyTables")
+    using PrettyTables
+end
+
 # Generate random atomic positions in a cubic cell
 function generate_system(n_atoms::Int, density::Float64=0.05)
     volume = n_atoms / density
@@ -90,16 +99,8 @@ function run_benchmark(; n_atoms_list=[1000, 5000, 10000, 50000, 100000],
     println("Cutoff: $(cutoff) Å, Density: $(density) atoms/Å³")
     println()
 
-    # Build header
-    header = "| Atoms | Pairs | CPU ($(Threads.nthreads())T) |"
-    separator = "|------:|------:|----------:|"
-    if cuda_available
-        header *= "      GPU | Speedup |"
-        separator *= "---------:|--------:|"
-    end
-
-    println(header)
-    println(separator)
+    # Collect benchmark results
+    results = []
 
     for n_atoms in n_atoms_list
         X, cell, pbc, L = generate_system(n_atoms, density)
@@ -109,7 +110,13 @@ function run_benchmark(; n_atoms_list=[1000, 5000, 10000, 50000, 100000],
         nlist = materialize_pairlist(clist)
         n_pairs = npairs(nlist)
 
-        row = "| $(lpad(n_atoms, 6)) | $(lpad(format_pairs(n_pairs), 5)) |"
+        row = Dict(
+            :atoms => n_atoms,
+            :pairs => format_pairs(n_pairs),
+            :cpu_time => "-",
+            :gpu_time => "-",
+            :speedup => "-"
+        )
 
         # CPU benchmark
         if n_atoms <= 100000
@@ -117,10 +124,8 @@ function run_benchmark(; n_atoms_list=[1000, 5000, 10000, 50000, 100000],
                 clist = build_cell_list($X, $cutoff, $cell, $pbc; backend=CPU())
                 nlist = materialize_pairlist(clist)
             end samples=5 evals=1
-            row *= " $(lpad(format_time(t_cpu), 9)) |"
-        else
-            t_cpu = nothing
-            row *= " $(lpad("-", 9)) |"
+            row[:cpu_time] = format_time(t_cpu)
+            row[:t_cpu_raw] = t_cpu
         end
 
         # GPU benchmark
@@ -135,19 +140,41 @@ function run_benchmark(; n_atoms_list=[1000, 5000, 10000, 50000, 100000],
                 nlist = materialize_pairlist(clist)
             end samples=5 evals=1
 
-            row *= " $(lpad(format_time(t_gpu), 8)) |"
+            row[:gpu_time] = format_time(t_gpu)
+            row[:t_gpu_raw] = t_gpu
 
             # Speedup
-            if t_cpu !== nothing
-                speedup = t_cpu / t_gpu
-                row *= " $(lpad(@sprintf("%.1fx", speedup), 7)) |"
-            else
-                row *= " $(lpad("-", 7)) |"
+            if haskey(row, :t_cpu_raw)
+                speedup = row[:t_cpu_raw] / t_gpu
+                row[:speedup] = @sprintf("%.1fx", speedup)
             end
         end
 
-        println(row)
+        push!(results, row)
     end
+
+    # Build table data
+    atoms_col = [r[:atoms] for r in results]
+    pairs_col = [r[:pairs] for r in results]
+    cpu_col = [r[:cpu_time] for r in results]
+
+    if cuda_available
+        gpu_col = [r[:gpu_time] for r in results]
+        speedup_col = [r[:speedup] for r in results]
+
+        data = hcat(atoms_col, pairs_col, cpu_col, gpu_col, speedup_col)
+        header = ["Atoms", "Pairs", "CPU ($(Threads.nthreads())T)", "GPU", "Speedup"]
+    else
+        data = hcat(atoms_col, pairs_col, cpu_col)
+        header = ["Atoms", "Pairs", "CPU ($(Threads.nthreads())T)"]
+    end
+
+    # Print table using PrettyTables
+    pretty_table(data;
+        header = header,
+        backend = Val(:markdown),
+        alignment = [:r, :r, :r, :r, :r][1:length(header)]
+    )
 
     # GPU throughput for large system
     if cuda_available

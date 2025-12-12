@@ -1,0 +1,334 @@
+# Shared test utilities for NeighbourLists.jl
+# This module consolidates common test helpers to reduce code duplication
+
+using NeighbourLists
+using NeighbourLists: SMat, SVec, nsites, npairs, SortedCellList,
+                      build_cell_list, materialize_pairlist, for_each_neighbour
+using LinearAlgebra
+using StaticArrays
+using Test
+
+# ==================== Configuration Generators ====================
+
+"""
+    rand_config(N; density=0.05)
+
+Generate a random cubic configuration with N atoms.
+Returns (X, C, L) where X is positions, C is cell matrix, L is box length.
+"""
+function rand_config(N; density=0.05)
+    volume = N / density
+    L = volume^(1/3)
+    C = SMat(diagm([L, L, L]))
+    X = [SVec(L * rand(), L * rand(), L * rand()) for _ in 1:N]
+    return X, C, L
+end
+
+"""
+    all_pbc_cases()
+
+Return all 8 combinations of periodic boundary conditions for 3D.
+"""
+function all_pbc_cases()
+    return [
+        SVec(true, true, true),    # Full PBC
+        SVec(false, false, false), # No PBC
+        SVec(true, false, false),  # PBC in x only
+        SVec(false, true, false),  # PBC in y only
+        SVec(false, false, true),  # PBC in z only
+        SVec(true, true, false),   # PBC in x,y
+        SVec(true, false, true),   # PBC in x,z
+        SVec(false, true, true),   # PBC in y,z
+    ]
+end
+
+"""
+    cubic_cell(L)
+
+Create a cubic cell matrix with side length L.
+"""
+cubic_cell(L) = SMat(diagm([L, L, L]))
+
+# ==================== Pair List Comparison ====================
+
+"""
+    get_sorted_pairs(nlist)
+
+Extract pairs from a PairList as sorted vector of (i, j, S) tuples.
+"""
+function get_sorted_pairs(nlist)
+    return sort(collect(zip(nlist.i, nlist.j, [Tuple(s) for s in nlist.S])))
+end
+
+"""
+    pairs_to_set(i, j, S)
+
+Convert pair arrays (i, j, S) to a Set of tuples for comparison.
+"""
+function pairs_to_set(i, j, S)
+    result = Set{Tuple{Int, Int, Tuple{Int,Int,Int}}}()
+    for idx in eachindex(i)
+        push!(result, (i[idx], j[idx], Tuple(S[idx])))
+    end
+    return result
+end
+
+"""
+    compare_pairlists(nlist1, nlist2)
+
+Compare two PairLists for equality (order-independent).
+Returns true if they contain the same pairs.
+"""
+function compare_pairlists(nlist1, nlist2)
+    pairs1 = get_sorted_pairs(nlist1)
+    pairs2 = get_sorted_pairs(nlist2)
+    return pairs1 == pairs2
+end
+
+# ==================== GPU/CPU Comparison ====================
+
+"""
+    compare_cpu_gpu_pairs(nlist_cpu, nlist_gpu)
+
+Compare CPU and GPU pair lists for equality.
+GPU arrays are copied to CPU for comparison.
+"""
+function compare_cpu_gpu_pairs(nlist_cpu, nlist_gpu)
+    cpu_pairs = sort(collect(zip(nlist_cpu.i, nlist_cpu.j)))
+    gpu_pairs = sort(collect(zip(Array(nlist_gpu.i), Array(nlist_gpu.j))))
+    return cpu_pairs == gpu_pairs
+end
+
+"""
+    compare_cpu_gpu_shifts(nlist_cpu, nlist_gpu)
+
+Compare shift vectors between CPU and GPU pair lists.
+"""
+function compare_cpu_gpu_shifts(nlist_cpu, nlist_gpu)
+    cpu_shifts = sort([Tuple(s) for s in nlist_cpu.S])
+    gpu_shifts = sort([Tuple(s) for s in Array(nlist_gpu.S)])
+    return cpu_shifts == gpu_shifts
+end
+
+"""
+    compare_cpu_gpu_full(nlist_cpu, nlist_gpu)
+
+Full comparison of CPU and GPU pair lists including shifts.
+"""
+function compare_cpu_gpu_full(nlist_cpu, nlist_gpu)
+    cpu_set = pairs_to_set(nlist_cpu.i, nlist_cpu.j, nlist_cpu.S)
+    gpu_set = pairs_to_set(Array(nlist_gpu.i), Array(nlist_gpu.j), Array(nlist_gpu.S))
+    return cpu_set == gpu_set
+end
+
+# ==================== Backend Availability ====================
+
+"""
+    check_cuda_available()
+
+Check if CUDA is available and functional.
+Returns true if CUDA can be loaded and is functional.
+"""
+function check_cuda_available()
+    try
+        cuda_mod = Base.require(Main, :CUDA)
+        return cuda_mod.functional()
+    catch
+        return false
+    end
+end
+
+"""
+    check_pythoncall_available()
+
+Check if PythonCall and CondaPkg are available.
+"""
+function check_pythoncall_available()
+    try
+        Base.require(Main, :CondaPkg)
+        Base.require(Main, :PythonCall)
+        return true
+    catch
+        return false
+    end
+end
+
+# ==================== Test Helpers ====================
+
+"""
+    rand_non_cubic_cell()
+
+Generate a random non-cubic (triclinic) cell matrix for testing.
+"""
+function rand_non_cubic_cell()
+    return SMat([10.0 2.0 1.0; 0.0 9.0 1.5; 0.0 0.0 8.0])
+end
+
+"""
+    rand_config_triclinic(N; cell=rand_non_cubic_cell())
+
+Generate random configuration in a non-cubic cell.
+"""
+function rand_config_triclinic(N; cell=rand_non_cubic_cell())
+    X = [cell' * SVec(rand(), rand(), rand()) for _ in 1:N]
+    return X, cell
+end
+
+# ==================== High-Level Parametric Test Runners ====================
+
+"""
+    test_legacy_vs_sortbased(; N=100, density=0.05, cutoff_frac=0.25, pbc=SVec(true,true,true))
+
+Test that sort-based implementation matches legacy linked-list implementation.
+"""
+function test_legacy_vs_sortbased(; N=100, density=0.05, cutoff_frac=0.25,
+                                    pbc=SVec(true, true, true))
+    X, C, L = rand_config(N; density=density)
+    cutoff = L * cutoff_frac
+
+    nlist_legacy = PairList(X, cutoff, C, pbc; int_type=Int32)
+    clist = build_cell_list(X, cutoff, C, pbc; backend=CPU())
+    nlist_sort = materialize_pairlist(clist)
+
+    @test npairs(nlist_legacy) == npairs(nlist_sort)
+    @test compare_pairlists(nlist_legacy, nlist_sort)
+end
+
+"""
+    test_all_pbc_legacy_vs_sortbased(; N=50, density=0.05, cutoff_frac=0.33)
+
+Run legacy vs sort-based comparison for all 8 PBC combinations.
+"""
+function test_all_pbc_legacy_vs_sortbased(; N=50, density=0.05, cutoff_frac=0.33)
+    X, C, L = rand_config(N; density=density)
+    cutoff = L * cutoff_frac
+
+    for pbc in all_pbc_cases()
+        nlist_legacy = PairList(X, cutoff, C, pbc; int_type=Int32)
+        clist = build_cell_list(X, cutoff, C, pbc; backend=CPU())
+        nlist_sort = materialize_pairlist(clist)
+
+        @test npairs(nlist_legacy) == npairs(nlist_sort)
+        @test compare_pairlists(nlist_legacy, nlist_sort)
+    end
+end
+
+"""
+    test_cpu_vs_gpu(to_gpu; N=100, density=0.05, cutoff_frac=0.33, pbc=SVec(true,true,true))
+
+Test that GPU implementation matches CPU implementation.
+`to_gpu` is a function that converts arrays to GPU (e.g., CuArray).
+"""
+function test_cpu_vs_gpu(to_gpu; N=100, density=0.05, cutoff_frac=0.33,
+                          pbc=SVec(true, true, true))
+    X, C, L = rand_config(N; density=density)
+    cutoff = L * cutoff_frac
+
+    # CPU version
+    clist_cpu = build_cell_list(X, cutoff, C, pbc; backend=CPU())
+    nlist_cpu = materialize_pairlist(clist_cpu)
+
+    # GPU version
+    X_gpu = to_gpu(X)
+    clist_gpu = build_cell_list(X_gpu, cutoff, C, pbc)
+    nlist_gpu = materialize_pairlist(clist_gpu)
+
+    @test npairs(nlist_cpu) == npairs(nlist_gpu)
+    @test compare_cpu_gpu_full(nlist_cpu, nlist_gpu)
+end
+
+"""
+    test_all_pbc_cpu_vs_gpu(to_gpu; N=50, density=0.05, cutoff_frac=0.33)
+
+Run CPU vs GPU comparison for all 8 PBC combinations.
+"""
+function test_all_pbc_cpu_vs_gpu(to_gpu; N=50, density=0.05, cutoff_frac=0.33)
+    X, C, L = rand_config(N; density=density)
+    cutoff = L * cutoff_frac
+
+    for pbc in all_pbc_cases()
+        clist_cpu = build_cell_list(X, cutoff, C, pbc; backend=CPU())
+        nlist_cpu = materialize_pairlist(clist_cpu)
+
+        X_gpu = to_gpu(X)
+        clist_gpu = build_cell_list(X_gpu, cutoff, C, pbc)
+        nlist_gpu = materialize_pairlist(clist_gpu)
+
+        @test npairs(nlist_cpu) == npairs(nlist_gpu)
+        @test compare_cpu_gpu_full(nlist_cpu, nlist_gpu)
+    end
+end
+
+"""
+    test_triclinic_cell(test_fn; N=80, cutoff=3.0)
+
+Test with a non-cubic (triclinic) cell.
+test_fn(X, C, cutoff, pbc) should run the actual test.
+"""
+function test_triclinic_cell(test_fn; N=80, cutoff=3.0, pbc=SVec(true, true, true))
+    C = rand_non_cubic_cell()
+    X = [C' * SVec(rand(), rand(), rand()) for _ in 1:N]
+    test_fn(X, C, cutoff, pbc)
+end
+
+"""
+    test_sizes(test_fn; sizes=[50, 100, 200, 500], density=0.05, cutoff_frac=0.25)
+
+Run test_fn for multiple system sizes.
+test_fn(X, C, L, cutoff) should run the actual test.
+"""
+function test_sizes(test_fn; sizes=[50, 100, 200, 500], density=0.05, cutoff_frac=0.25)
+    for N in sizes
+        X, C, L = rand_config(N; density=density)
+        cutoff = L * cutoff_frac
+        test_fn(X, C, L, cutoff)
+    end
+end
+
+"""
+    run_standard_correctness_suite(; gpu_array_fn=nothing)
+
+Run the standard correctness test suite. If gpu_array_fn is provided,
+also runs GPU tests.
+"""
+function run_standard_correctness_suite(; gpu_array_fn=nothing)
+    @testset "Random configs" begin
+        for _ in 1:5
+            test_legacy_vs_sortbased(N=rand(50:200))
+        end
+    end
+
+    @testset "All PBC combinations" begin
+        test_all_pbc_legacy_vs_sortbased()
+    end
+
+    @testset "Triclinic cell" begin
+        test_triclinic_cell() do X, C, cutoff, pbc
+            nlist_legacy = PairList(X, cutoff, C, pbc; int_type=Int32)
+            clist = build_cell_list(X, cutoff, C, pbc; backend=CPU())
+            nlist_sort = materialize_pairlist(clist)
+            @test npairs(nlist_legacy) == npairs(nlist_sort)
+            @test compare_pairlists(nlist_legacy, nlist_sort)
+        end
+    end
+
+    @testset "Large systems" begin
+        test_sizes(sizes=[500, 1000]) do X, C, L, cutoff
+            pbc = SVec(true, true, true)
+            nlist_legacy = PairList(X, cutoff, C, pbc; int_type=Int32)
+            clist = build_cell_list(X, cutoff, C, pbc; backend=CPU())
+            nlist_sort = materialize_pairlist(clist)
+            @test npairs(nlist_legacy) == npairs(nlist_sort)
+        end
+    end
+
+    if gpu_array_fn !== nothing
+        @testset "GPU correctness" begin
+            test_cpu_vs_gpu(gpu_array_fn)
+        end
+
+        @testset "GPU all PBC" begin
+            test_all_pbc_cpu_vs_gpu(gpu_array_fn)
+        end
+    end
+end
