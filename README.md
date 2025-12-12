@@ -1,33 +1,51 @@
 # NeighbourLists.jl
 
-A Julia port and restructuring of the neighbourlist implemented in
-[matscipy](https://github.com/libAtoms/matscipy) (with the authors' permission).
-Single-threaded, the Julia version is faster than matscipy for small systems,
-probably due  to the overhead of dealing with Python, but on large systems it is
-tends to be slower (up to around a factor 2 for 100,000 atoms). 
+A Julia package for computing neighbour lists in molecular simulations. Originally a port of the neighbourlist from [matscipy](https://github.com/libAtoms/matscipy), now extended with multi-threaded CPU and portable GPU support.
 
 The package can be used stand-alone or with [AtomsBase.jl](https://github.com/JuliaMolSim/AtomsBase.jl).
 
-## Getting Started
-
-```Julia
-Pkg.add("NeighbourLists")
-using NeighbourLists
-?PairList
-```
-
-### Usage via `AtomsBase.jl` 
+## Installation
 
 ```julia
-using ASEconvert, NeighbourLists, Unitful
-cu = ase.build.bulk("Cu") * pytuple((4, 2, 3))
-sys = pyconvert(AbstractSystem, cu)
-nlist = PairList(sys, 3.5u"Å")
-neigs_1, Rs_1 = neigs(nlist, 1)
+using Pkg
+Pkg.add("NeighbourLists")
 ```
 
-Please also look at the tests on how to use this package. Or just open an issue and
-ask.
+## Two Implementations
+
+The package provides two cell list implementations:
+
+| Implementation | Algorithm | Parallelism | Use Case |
+|---------------|-----------|-------------|----------|
+| **Legacy** | Linked-list | Single-threaded | Small systems, compatibility |
+| **Sort-based** | Sort by cell ID | Multi-threaded CPU, GPU | Large systems, performance |
+
+Both produce identical results (validated in tests). The sort-based implementation is recommended for new code.
+
+## Quick Start
+
+### Using AtomsBase.jl
+
+```julia
+using AtomsBuilder, NeighbourLists, Unitful
+
+sys = bulk(:Cu, cubic=true) * (4, 4, 4)
+nlist = PairList(sys, 5.0u"Å")
+j, R = neigs(nlist, 1)  # neighbours of atom 1
+```
+
+### Using raw arrays
+
+```julia
+using NeighbourLists, StaticArrays, LinearAlgebra
+
+X = [SVector{3,Float64}(rand(3)...) for _ in 1:1000]  # positions
+cell = SMatrix{3,3,Float64}(10.0*I)                    # 10x10x10 cell
+pbc = SVector{3,Bool}(true, true, true)                # periodic
+
+nlist = PairList(X, 3.0, cell, pbc)
+j, R = neigs(nlist, 1)
+```
 
 ## Sort-Based API (CPU and GPU)
 
