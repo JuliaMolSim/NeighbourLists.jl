@@ -65,6 +65,69 @@ lengths(C::SMat{T}) where {T} =
    det(C) ./ SVec{T}(norm(C[2,:]×C[3,:]), norm(C[3,:]×C[1,:]), norm(C[1,:]×C[2,:]))
 
 
+# ====================== GPU-Compatible Unified Helpers =====================
+# These functions work in both CPU and GPU kernel contexts (no dynamic allocation)
+
+"""
+Convert 3D cartesian index to linear index (1-based, column-major).
+GPU-compatible version using explicit arithmetic instead of LinearIndices.
+"""
+@inline function _sub2ind_scalar(dims::NTuple{3,TI}, idx::NTuple{3,TI}) where TI
+    return idx[1] + (idx[2] - one(TI)) * dims[1] +
+           (idx[3] - one(TI)) * dims[1] * dims[2]
+end
+
+@inline _sub2ind_scalar(dims::SVec{TI}, idx::SVec{TI}) where TI =
+    _sub2ind_scalar(dims.data, idx.data)
+
+"""
+Wrap cell index for periodic boundary and compute shift.
+Returns (wrapped_index, shift).
+"""
+@inline function wrap_and_shift(i::TI, n::TI, pbc::Bool) where TI
+    if !pbc
+        return clamp(i, one(TI), n), zero(TI)
+    end
+    shift = zero(TI)
+    wrapped = i
+    while wrapped <= zero(TI)
+        wrapped += n
+        shift -= one(TI)
+    end
+    while wrapped > n
+        wrapped -= n
+        shift += one(TI)
+    end
+    return wrapped, shift
+end
+
+"""
+Convert position to cell index using explicit scalar construction.
+GPU-compatible version that avoids broadcasting.
+"""
+@inline function position_to_cell_index_scalar(inv_cell::SMat{T}, x::SVec{T},
+                                                ncells::SVec{TI}) where {T, TI}
+    frac = inv_cell' * x
+    return SVec{TI}(
+        floor(TI, frac[1] * ncells[1] + one(TI)),
+        floor(TI, frac[2] * ncells[2] + one(TI)),
+        floor(TI, frac[3] * ncells[3] + one(TI))
+    )
+end
+
+"""
+Apply wrap or truncation to each component of a cell index vector.
+GPU-compatible version using explicit component access.
+"""
+@inline function bin_wrap_or_trunc_vec(ci::SVec{TI}, pbc::SVec{Bool},
+                                        ncells::SVec{TI}) where TI
+    c1 = pbc[1] ? bin_wrap(ci[1], ncells[1]) : clamp(ci[1], one(TI), ncells[1])
+    c2 = pbc[2] ? bin_wrap(ci[2], ncells[2]) : clamp(ci[2], one(TI), ncells[2])
+    c3 = pbc[3] ? bin_wrap(ci[3], ncells[3]) : clamp(ci[3], one(TI), ncells[3])
+    return SVec{TI}(c1, c2, c3)
+end
+
+
 # --------------------------------------------------------------------------
 
 function analyze_cell(cell, cutoff, TI)
@@ -547,7 +610,7 @@ enabling efficient parallel traversal.
 function build_cell_list(X::AbstractVector{<:SVec{T}}, cutoff::Real,
                          cell::AbstractMatrix, pbc;
                          int_type::Type{TI} = Int32,
-                         backend = default_backend()) where {T, TI}
+                         backend = get_backend(X)) where {T, TI}
 
     cell_mat = SMat{T}(cell)
     pbc_vec = SVec{Bool}(pbc)
@@ -574,7 +637,7 @@ function _build_sorted_celllist(X::AbstractVector{SVec{T}}, cell::SMat{T},
     end
 
     # Step 1: Compute cell ID for each atom
-    cell_ids = _compute_cell_ids(X, inv_cell, ncells_vec, pbc, TI)
+    cell_ids = _compute_cell_ids(X, inv_cell, ncells_vec, pbc, TI, backend)
 
     # Step 2: Sort atoms by cell ID
     perm = _get_sortperm(cell_ids, backend)
@@ -582,7 +645,7 @@ function _build_sorted_celllist(X::AbstractVector{SVec{T}}, cell::SMat{T},
     sorted_X = X[perm]
 
     # Step 3: Compute cell offsets (CSR-style)
-    cell_offsets = _compute_cell_offsets(sorted_cell_ids, ncells_total, TI)
+    cell_offsets = _compute_cell_offsets(sorted_cell_ids, ncells_total, TI, backend)
 
     return SortedCellList{T, TI, typeof(X), typeof(perm)}(
         sorted_X, X, perm, sorted_cell_ids, cell_offsets,
@@ -591,10 +654,11 @@ function _build_sorted_celllist(X::AbstractVector{SVec{T}}, cell::SMat{T},
 end
 
 """
-Compute cell ID for each atom position.
+Compute cell ID for each atom position (CPU version).
 """
 function _compute_cell_ids(X::AbstractVector{SVec{T}}, inv_cell::SMat{T},
-                           ncells::SVec{TI}, pbc::SVec{Bool}, ::Type{TI}) where {T, TI}
+                           ncells::SVec{TI}, pbc::SVec{Bool}, ::Type{TI},
+                           backend::CPU) where {T, TI}
     nat = length(X)
     cell_ids = Vector{TI}(undef, nat)
     ns = ncells.data
@@ -611,20 +675,29 @@ function _compute_cell_ids(X::AbstractVector{SVec{T}}, inv_cell::SMat{T},
     return cell_ids
 end
 
-# Default sortperm for CPU
-function _get_sortperm(cell_ids::AbstractVector{TI}, backend) where TI
+# GPU version - defined in gpu_kernels.jl after the GPU functions are loaded
+
+# Default sortperm for CPU (uses Julia's built-in)
+function _get_sortperm(cell_ids::AbstractVector{TI}, backend::CPU) where TI
     return TI.(sortperm(cell_ids))
 end
 
-# GPU extension point - override in NeighbourListsCUDAExt
-function gpu_sortperm end
+# GPU sortperm using AcceleratedKernels (works for all GPU backends: CUDA, ROCm, Metal, oneAPI)
+function _get_sortperm(cell_ids::AbstractVector{TI}, backend) where TI
+    n = length(cell_ids)
+    perm = similar(cell_ids, TI, n)
+    AcceleratedKernels.sortperm!(perm, cell_ids)
+    synchronize(backend)
+    return perm
+end
 
 """
-Compute CSR-style offsets from sorted cell IDs.
+Compute CSR-style offsets from sorted cell IDs (CPU version).
 `cell_offsets[c]:cell_offsets[c+1]-1` gives indices of atoms in cell `c`.
 """
 function _compute_cell_offsets(sorted_cell_ids::AbstractVector{TI},
-                               ncells_total::Integer, ::Type{TI}) where TI
+                               ncells_total::Integer, ::Type{TI},
+                               backend::CPU) where TI
     nat = length(sorted_cell_ids)
     # +1 for sentinel at end
     cell_offsets = zeros(TI, ncells_total + 1)
@@ -647,6 +720,8 @@ function _compute_cell_offsets(sorted_cell_ids::AbstractVector{TI},
 
     return cell_offsets
 end
+
+# GPU version - defined in gpu_kernels.jl after the GPU functions are loaded
 
 
 # ==================== Lazy Neighbour Access for SortedCellList ====================
@@ -849,7 +924,7 @@ Uses a two-pass algorithm for parallelization:
 This approach enables multi-threaded CPU execution via KernelAbstractions.
 """
 function materialize_pairlist(clist::SortedCellList{T, TI, <:Vector};
-                              backend = default_backend()) where {T, TI}
+                              backend = get_backend(clist.X_orig)) where {T, TI}
     nat = nsites(clist)
 
     if nat == 0
@@ -904,6 +979,8 @@ function materialize_pairlist(clist::SortedCellList{T, TI, <:Vector};
                     i_arr, j_arr, S_arr, offsets)
 end
 
+# GPU version - defined in gpu_kernels.jl after the GPU functions are loaded
+
 
 # ==================== New API: PairList with backend ====================
 
@@ -916,7 +993,7 @@ Uses sort-based cell list construction which is parallelizable.
 """
 function PairList(X::AbstractVector{<:SVec}, cutoff::Real,
                   cell::AbstractMatrix, pbc;
-                  backend = default_backend(),
+                  backend = get_backend(X),
                   int_type::Type = Int32)
     clist = build_cell_list(X, cutoff, cell, pbc;
                             int_type=int_type, backend=backend)

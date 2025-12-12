@@ -4,6 +4,7 @@ module NeighbourLists
 
 using KernelAbstractions
 using KernelAbstractions: @kernel, @index, @Const, synchronize, get_backend
+using AcceleratedKernels
 
 # Re-export backend types for user convenience
 export CPU

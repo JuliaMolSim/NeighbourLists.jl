@@ -7,77 +7,42 @@ using Atomix: @atomic
 
 export compute_cell_ids_kernel!, count_neighbours_kernel!, fill_pairs_kernel!
 
-# ==================== GPU Helper Functions ====================
+# Note: Helper functions (_sub2ind_scalar, wrap_and_shift, position_to_cell_index_scalar,
+# bin_wrap_or_trunc_vec, bin_wrap) are defined in cell_list.jl and work in GPU kernel contexts.
+
+# ==================== Shared Kernel Helpers ====================
 
 """
-Convert 3D cartesian index to linear index (1-based, column-major).
+Check if cell offset (dx, dy, dz) is within bounds for non-periodic boundaries.
 """
-@inline function _sub2ind_gpu(dims::NTuple{3,TI}, idx::NTuple{3,TI}) where TI
-    return idx[1] + (idx[2] - one(TI)) * dims[1] +
-           (idx[3] - one(TI)) * dims[1] * dims[2]
-end
-
-@inline function _sub2ind_gpu(dims::SVec{TI}, idx::SVec{TI}) where TI
-    return _sub2ind_gpu(dims.data, idx.data)
-end
-
-"""
-Wrap cell index for periodic boundary and compute shift.
-Returns (wrapped_index, shift).
-"""
-@inline function _wrap_and_shift_gpu(i::TI, n::TI, pbc::Bool) where TI
-    if !pbc
-        # For non-periodic: clamp to bounds, no shift
-        return clamp(i, one(TI), n), zero(TI)
-    end
-
-    # For periodic: wrap around and track shift
-    shift = zero(TI)
-    wrapped = i
-
-    while wrapped <= zero(TI)
-        wrapped += n
-        shift -= one(TI)
-    end
-    while wrapped > n
-        wrapped -= n
-        shift += one(TI)
-    end
-
-    return wrapped, shift
+@inline function _is_cell_in_bounds(ci::SVec{TI}, dx::TI, dy::TI, dz::TI,
+                                     ncells::SVec{TI}, pbc::SVec{Bool}) where TI
+    (pbc[1] || (one(TI) <= ci[1] + dx <= ncells[1])) &&
+    (pbc[2] || (one(TI) <= ci[2] + dy <= ncells[2])) &&
+    (pbc[3] || (one(TI) <= ci[3] + dz <= ncells[3]))
 end
 
 """
-Convert position to cell index (GPU-compatible version).
+Check if this is a self-interaction (same atom without periodic shift).
 """
-@inline function _position_to_cell_index_gpu(inv_cell::SMat{T}, x::SVec{T},
-                                              ncells::SVec{TI}) where {T, TI}
-    # Transform to fractional coordinates and scale by cell count
-    frac = inv_cell' * x
-    return SVec{TI}(
-        floor(TI, frac[1] * ncells[1] + one(TI)),
-        floor(TI, frac[2] * ncells[2] + one(TI)),
-        floor(TI, frac[3] * ncells[3] + one(TI))
-    )
+@inline function _is_self_interaction(i::Integer, j::Integer,
+                                       shift_x::TI, shift_y::TI, shift_z::TI) where TI
+    i == j && shift_x == zero(TI) && shift_y == zero(TI) && shift_z == zero(TI)
 end
 
 """
-Apply wrap or truncation to a cell index vector (GPU-compatible).
+Get the linear cell index and cell shift for a neighboring cell.
+Returns (cell_linear_index, cell_shift_vector).
 """
-@inline function _bin_wrap_or_trunc_vec_gpu(ci::SVec{TI}, pbc::SVec{Bool},
-                                            ncells::SVec{TI}) where TI
-    c1 = pbc[1] ? _bin_wrap_gpu(ci[1], ncells[1]) : clamp(ci[1], one(TI), ncells[1])
-    c2 = pbc[2] ? _bin_wrap_gpu(ci[2], ncells[2]) : clamp(ci[2], one(TI), ncells[2])
-    c3 = pbc[3] ? _bin_wrap_gpu(ci[3], ncells[3]) : clamp(ci[3], one(TI), ncells[3])
-    return SVec{TI}(c1, c2, c3)
+@inline function _get_neighbor_cell(ci::SVec{TI}, dx::TI, dy::TI, dz::TI,
+                                     ncells::SVec{TI}, pbc::SVec{Bool}) where TI
+    cj_x, shift_x = wrap_and_shift(ci[1] + dx, ncells[1], pbc[1])
+    cj_y, shift_y = wrap_and_shift(ci[2] + dy, ncells[2], pbc[2])
+    cj_z, shift_z = wrap_and_shift(ci[3] + dz, ncells[3], pbc[3])
+    cell_shift = SVec{TI}(shift_x, shift_y, shift_z)
+    cj_linear = _sub2ind_scalar((ncells[1], ncells[2], ncells[3]), (cj_x, cj_y, cj_z))
+    return cj_linear, cell_shift
 end
-
-@inline function _bin_wrap_gpu(i::TI, n::TI) where TI
-    while i <= zero(TI); i += n; end
-    while i > n; i -= n; end
-    return i
-end
-
 
 # ==================== GPU Kernels ====================
 
@@ -94,20 +59,12 @@ Kernel to compute cell ID for each atom position.
         xi = X[i]
         TI = eltype(ncells)
 
-        # Transform to fractional coordinates and scale by cell count
-        frac = inv_cell' * xi
-        c = SVec{TI}(
-            floor(TI, frac[1] * ncells[1] + one(TI)),
-            floor(TI, frac[2] * ncells[2] + one(TI)),
-            floor(TI, frac[3] * ncells[3] + one(TI))
-        )
-
-        # Apply boundary conditions
-        c = _bin_wrap_or_trunc_vec_gpu(c, pbc, ncells)
+        # Compute cell index
+        c = position_to_cell_index_scalar(inv_cell, xi, ncells)
+        c = bin_wrap_or_trunc_vec(c, pbc, ncells)
 
         # Convert to linear index
-        ns = ncells.data
-        cell_ids[i] = _sub2ind_gpu(ns, c.data)
+        cell_ids[i] = _sub2ind_scalar(ncells, c)
     end
 end
 
@@ -123,41 +80,21 @@ Each thread handles one atom and counts its neighbours within cutoff.
     i = @index(Global, Linear)
     nat = length(X_orig)
 
-    # Use if-block instead of early return (KernelAbstractions requirement)
     if i <= nat
         xi = X_orig[i]
         TI = eltype(ncells)
         count = zero(TI)
 
         # Get cell index of atom i
-        ci = _position_to_cell_index_gpu(inv_cell, xi, ncells)
-        ci = _bin_wrap_or_trunc_vec_gpu(ci, pbc, ncells)
+        ci = position_to_cell_index_scalar(inv_cell, xi, ncells)
+        ci = bin_wrap_or_trunc_vec(ci, pbc, ncells)
 
         # Iterate over adjacent cells
         for dz in -nxyz[3]:nxyz[3]
             for dy in -nxyz[2]:nxyz[2]
                 for dx in -nxyz[1]:nxyz[1]
-                    # Compute neighbor cell index with wrapping
-                    cj_x, shift_x = _wrap_and_shift_gpu(ci[1] + TI(dx), ncells[1], pbc[1])
-                    cj_y, shift_y = _wrap_and_shift_gpu(ci[2] + TI(dy), ncells[2], pbc[2])
-                    cj_z, shift_z = _wrap_and_shift_gpu(ci[3] + TI(dz), ncells[3], pbc[3])
-
-                    # Check if inside domain (for non-periodic)
-                    in_bounds = true
-                    if !pbc[1] && (ci[1] + TI(dx) < one(TI) || ci[1] + TI(dx) > ncells[1])
-                        in_bounds = false
-                    end
-                    if !pbc[2] && (ci[2] + TI(dy) < one(TI) || ci[2] + TI(dy) > ncells[2])
-                        in_bounds = false
-                    end
-                    if !pbc[3] && (ci[3] + TI(dz) < one(TI) || ci[3] + TI(dz) > ncells[3])
-                        in_bounds = false
-                    end
-
-                    if in_bounds
-                        cell_shift = SVec{TI}(shift_x, shift_y, shift_z)
-                        cj_linear = _sub2ind_gpu((ncells[1], ncells[2], ncells[3]),
-                                                 (cj_x, cj_y, cj_z))
+                    if _is_cell_in_bounds(ci, TI(dx), TI(dy), TI(dz), ncells, pbc)
+                        cj_linear, cell_shift = _get_neighbor_cell(ci, TI(dx), TI(dy), TI(dz), ncells, pbc)
 
                         # Iterate over atoms in this cell
                         idx_start = cell_offsets[cj_linear]
@@ -166,11 +103,7 @@ Each thread handles one atom and counts its neighbours within cutoff.
                         for idx in idx_start:idx_end
                             j_orig = perm[idx]
 
-                            # Skip self-interaction (unless periodic image)
-                            is_self = (i == j_orig && shift_x == zero(TI) &&
-                                       shift_y == zero(TI) && shift_z == zero(TI))
-
-                            if !is_self
+                            if !_is_self_interaction(i, j_orig, cell_shift[1], cell_shift[2], cell_shift[3])
                                 xj = X_orig[j_orig]
                                 R = xj - xi + cell_mat' * cell_shift
                                 r_sq = dot(R, R)
@@ -201,7 +134,6 @@ Each thread handles one atom and writes its pairs to the pre-allocated arrays.
     i = @index(Global, Linear)
     nat = length(X_orig)
 
-    # Use if-block instead of early return (KernelAbstractions requirement)
     if i <= nat
         xi = X_orig[i]
         TI = eltype(ncells)
@@ -210,33 +142,15 @@ Each thread handles one atom and writes its pairs to the pre-allocated arrays.
         write_idx = offsets[i]
 
         # Get cell index of atom i
-        ci = _position_to_cell_index_gpu(inv_cell, xi, ncells)
-        ci = _bin_wrap_or_trunc_vec_gpu(ci, pbc, ncells)
+        ci = position_to_cell_index_scalar(inv_cell, xi, ncells)
+        ci = bin_wrap_or_trunc_vec(ci, pbc, ncells)
 
         # Iterate over adjacent cells (same pattern as count kernel)
         for dz in -nxyz[3]:nxyz[3]
             for dy in -nxyz[2]:nxyz[2]
                 for dx in -nxyz[1]:nxyz[1]
-                    cj_x, shift_x = _wrap_and_shift_gpu(ci[1] + TI(dx), ncells[1], pbc[1])
-                    cj_y, shift_y = _wrap_and_shift_gpu(ci[2] + TI(dy), ncells[2], pbc[2])
-                    cj_z, shift_z = _wrap_and_shift_gpu(ci[3] + TI(dz), ncells[3], pbc[3])
-
-                    # Check if inside domain (for non-periodic)
-                    in_bounds = true
-                    if !pbc[1] && (ci[1] + TI(dx) < one(TI) || ci[1] + TI(dx) > ncells[1])
-                        in_bounds = false
-                    end
-                    if !pbc[2] && (ci[2] + TI(dy) < one(TI) || ci[2] + TI(dy) > ncells[2])
-                        in_bounds = false
-                    end
-                    if !pbc[3] && (ci[3] + TI(dz) < one(TI) || ci[3] + TI(dz) > ncells[3])
-                        in_bounds = false
-                    end
-
-                    if in_bounds
-                        cell_shift = SVec{TI}(shift_x, shift_y, shift_z)
-                        cj_linear = _sub2ind_gpu((ncells[1], ncells[2], ncells[3]),
-                                                 (cj_x, cj_y, cj_z))
+                    if _is_cell_in_bounds(ci, TI(dx), TI(dy), TI(dz), ncells, pbc)
+                        cj_linear, cell_shift = _get_neighbor_cell(ci, TI(dx), TI(dy), TI(dz), ncells, pbc)
 
                         idx_start = cell_offsets[cj_linear]
                         idx_end = cell_offsets[cj_linear + one(TI)] - one(TI)
@@ -244,10 +158,7 @@ Each thread handles one atom and writes its pairs to the pre-allocated arrays.
                         for idx in idx_start:idx_end
                             j_orig = perm[idx]
 
-                            is_self = (i == j_orig && shift_x == zero(TI) &&
-                                       shift_y == zero(TI) && shift_z == zero(TI))
-
-                            if !is_self
+                            if !_is_self_interaction(i, j_orig, cell_shift[1], cell_shift[2], cell_shift[3])
                                 xj = X_orig[j_orig]
                                 R = xj - xi + cell_mat' * cell_shift
                                 r_sq = dot(R, R)
@@ -376,18 +287,200 @@ end
 # map_pairs_d! which operate on individual pairs and are fully GPU-accelerated.
 
 
-# ==================== Extension Points ====================
-
-# These functions are implemented in the CUDA extension
-
-"""
-Compute pair offsets from counts using GPU prefix sum.
-Must be implemented in GPU extension (e.g., NeighbourListsCUDAExt).
-"""
-function compute_pair_offsets_gpu end
+# ==================== Portable GPU Operations ====================
+# These use AcceleratedKernels.jl and Atomix.jl for multi-vendor GPU support
+# (CUDA, ROCm, Metal, oneAPI)
 
 """
-GPU-accelerated materialize_pairlist.
-Dispatched based on array backend.
+Kernel to compute histogram of cell IDs using atomic increments.
+Works on any GPU backend via Atomix.jl.
 """
-function _materialize_pairlist_gpu end
+@kernel function _histogram_kernel!(offsets, @Const(cell_ids))
+    i = @index(Global, Linear)
+    if i <= length(cell_ids)
+        cid = cell_ids[i]
+        @atomic offsets[cid + 1] += one(eltype(offsets))
+    end
+end
+
+"""
+    compute_pair_offsets_gpu(counts::AbstractVector{TI}, backend) -> offsets
+
+Compute CSR-style offsets from neighbour counts using portable GPU operations.
+Uses AcceleratedKernels.accumulate! for prefix sum.
+
+Given counts[i] = number of neighbours for atom i,
+returns offsets where offsets[i] = 1 + sum(counts[1:i-1])
+so that pairs for atom i are stored at indices offsets[i]:offsets[i+1]-1
+"""
+function compute_pair_offsets_gpu(counts::AbstractVector{TI}, backend) where TI
+    n = length(counts)
+    offsets = similar(counts, TI, n + 1)
+    fill!(offsets, zero(TI))
+
+    # Copy counts into offsets[2:end]
+    copyto!(@view(offsets[2:end]), counts)
+
+    # Prefix sum using AcceleratedKernels (portable across all GPU backends)
+    AcceleratedKernels.accumulate!(+, @view(offsets[2:end]), @view(offsets[2:end]); init=zero(TI))
+
+    # Adjust for 1-based indexing
+    offsets .+= one(TI)
+
+    return offsets
+end
+
+"""
+    _compute_cell_ids_gpu(X, inv_cell, ncells, pbc, TI, backend) -> cell_ids
+
+Compute cell IDs for all atoms on GPU using KernelAbstractions kernel.
+"""
+function _compute_cell_ids_gpu(X::AbstractVector{<:SVec{T}}, inv_cell::SMat{T},
+                               ncells::SVec{TI}, pbc::SVec{Bool},
+                               ::Type{TI}, backend) where {T, TI}
+    nat = length(X)
+    cell_ids = similar(X, TI, nat)
+
+    kernel = compute_cell_ids_kernel!(backend)
+    kernel(cell_ids, X, inv_cell, ncells, pbc; ndrange=nat)
+    synchronize(backend)
+
+    return cell_ids
+end
+
+"""
+    _compute_cell_offsets_gpu(sorted_cell_ids, ncells_total, TI, backend) -> cell_offsets
+
+Compute CSR-style cell offsets on GPU using portable histogram and prefix sum.
+"""
+function _compute_cell_offsets_gpu(sorted_cell_ids::AbstractVector{TI},
+                                   ncells_total::Integer, ::Type{TI}, backend) where TI
+    nat = length(sorted_cell_ids)
+    cell_offsets = similar(sorted_cell_ids, TI, ncells_total + 1)
+    fill!(cell_offsets, zero(TI))
+
+    if nat == 0
+        fill!(cell_offsets, one(TI))
+        return cell_offsets
+    end
+
+    # Histogram using portable atomic increments via Atomix
+    kernel = _histogram_kernel!(backend)
+    kernel(cell_offsets, sorted_cell_ids; ndrange=nat)
+    synchronize(backend)
+
+    # Prefix sum using AcceleratedKernels
+    AcceleratedKernels.accumulate!(+, @view(cell_offsets[2:end]), @view(cell_offsets[2:end]); init=zero(TI))
+
+    # Adjust for 1-based indexing
+    cell_offsets .+= one(TI)
+
+    return cell_offsets
+end
+
+"""
+    _materialize_pairlist_gpu(clist::SortedCellList, backend) -> PairList
+
+GPU implementation of materialize_pairlist using two-kernel approach.
+Portable across all GPU backends via KernelAbstractions + AcceleratedKernels.
+
+1. Count neighbours per atom (parallel kernel)
+2. Compute offsets via prefix sum (AcceleratedKernels)
+3. Fill pair arrays (parallel kernel)
+"""
+function _materialize_pairlist_gpu(clist::SortedCellList{T, TI, AT, VI},
+                                   backend) where {T, TI, AT, VI}
+    nat = nsites(clist)
+
+    if nat == 0
+        i_arr = similar(clist.X_orig, TI, 0)
+        j_arr = similar(clist.X_orig, TI, 0)
+        S_arr = similar(clist.X_orig, SVec{TI}, 0)
+        first_arr = similar(clist.X_orig, TI, 1)
+        fill!(first_arr, one(TI))
+        return PairList{T, TI, AT, typeof(i_arr), typeof(S_arr)}(
+            clist.X_orig, clist.cell, clist.cutoff,
+            i_arr, j_arr, S_arr, first_arr)
+    end
+
+    # Compute how many cells to check in each direction
+    lens = lengths(clist.cell)
+    nxyz = ceil.(TI, clist.cutoff * (clist.ncells ./ abs.(lens)))
+    cutoff_sq = clist.cutoff^2
+
+    # ===== Kernel 1: Count neighbours per atom =====
+    counts = similar(clist.X_orig, TI, nat)
+    fill!(counts, zero(TI))
+
+    kernel1 = count_neighbours_kernel!(backend)
+    kernel1(counts, clist.X_orig, clist.cell_offsets, clist.perm,
+            clist.inv_cell, clist.cell, clist.ncells, clist.pbc,
+            cutoff_sq, nxyz; ndrange=nat)
+    synchronize(backend)
+
+    # ===== Step 2: Compute offsets via prefix sum =====
+    offsets = compute_pair_offsets_gpu(counts, backend)
+
+    # Get total pairs (need scalar access)
+    total_pairs = _scalar_getindex(offsets, length(offsets)) - one(TI)
+
+    if total_pairs == 0
+        i_arr = similar(clist.X_orig, TI, 0)
+        j_arr = similar(clist.X_orig, TI, 0)
+        S_arr = similar(clist.X_orig, SVec{TI}, 0)
+        first_arr = similar(clist.X_orig, TI, nat + 1)
+        fill!(first_arr, one(TI))
+        return PairList{T, TI, AT, typeof(i_arr), typeof(S_arr)}(
+            clist.X_orig, clist.cell, clist.cutoff,
+            i_arr, j_arr, S_arr, first_arr)
+    end
+
+    # ===== Step 3: Allocate pair arrays =====
+    i_arr = similar(clist.X_orig, TI, total_pairs)
+    j_arr = similar(clist.X_orig, TI, total_pairs)
+    S_arr = similar(clist.X_orig, SVec{TI}, total_pairs)
+
+    # ===== Kernel 2: Fill pair arrays =====
+    kernel2 = fill_pairs_kernel!(backend)
+    kernel2(i_arr, j_arr, S_arr, offsets, clist.X_orig, clist.cell_offsets,
+            clist.perm, clist.inv_cell, clist.cell, clist.ncells, clist.pbc,
+            cutoff_sq, nxyz; ndrange=nat)
+    synchronize(backend)
+
+    # Use offsets as the first array (already in correct CSR format)
+    first_arr = offsets[1:nat+1]
+
+    return PairList{T, TI, AT, typeof(i_arr), typeof(S_arr)}(
+        clist.X_orig, clist.cell, clist.cutoff,
+        i_arr, j_arr, S_arr, first_arr)
+end
+
+# Helper to get scalar from GPU array (copies single element to CPU)
+function _scalar_getindex(arr::AbstractVector, i::Integer)
+    # For GPU arrays, copy the single element to CPU
+    return Array(@view arr[i:i])[1]
+end
+
+
+# ==================== GPU Dispatch Methods ====================
+# These are defined here (after cell_list.jl) so they can reference the GPU implementations
+
+# GPU dispatch for _compute_cell_ids
+function _compute_cell_ids(X::AbstractVector{SVec{T}}, inv_cell::SMat{T},
+                           ncells::SVec{TI}, pbc::SVec{Bool}, ::Type{TI},
+                           backend) where {T, TI}
+    return _compute_cell_ids_gpu(X, inv_cell, ncells, pbc, TI, backend)
+end
+
+# GPU dispatch for _compute_cell_offsets
+function _compute_cell_offsets(sorted_cell_ids::AbstractVector{TI},
+                               ncells_total::Integer, ::Type{TI},
+                               backend) where TI
+    return _compute_cell_offsets_gpu(sorted_cell_ids, ncells_total, TI, backend)
+end
+
+# GPU dispatch for materialize_pairlist
+function materialize_pairlist(clist::SortedCellList{T, TI, AT, VI};
+                              backend = get_backend(clist.X_orig)) where {T, TI, AT, VI}
+    return _materialize_pairlist_gpu(clist, backend)
+end

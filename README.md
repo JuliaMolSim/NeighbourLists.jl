@@ -37,8 +37,9 @@ GPU-accelerated neighbour list construction is available via CUDA.jl. When CUDA 
 using LinearAlgebra, NeighbourLists, CUDA, StaticArrays
 
 # Create positions on GPU
-X = CuArray([SVector{3,Float64}(rand(3)...) for _ in 1:10000])
-cell = SMatrix{3,3,Float64}(10I)
+L = 10.0
+X = CuArray([SVector{3,Float64}(L*rand(), L*rand(), L*rand()) for _ in 1:10000])
+cell = SMatrix{3,3,Float64}(L*I)
 pbc = SVector{3,Bool}(true, true, true)
 
 # Build cell list and materialize pairs (runs on GPU)
@@ -50,14 +51,16 @@ The implementation uses a sort-based cell list with KernelAbstractions.jl for po
 
 ### Benchmarks
 
-Benchmarks on NVIDIA RTX A4500, 16 CPU threads (cutoff = 5.0 Å, density = 0.05 atoms/Å³):
+Benchmarks on NVIDIA RTX A4500 (cutoff = 5.0 Å, density = 0.05 atoms/Å³):
 
-| Atoms | Pairs | CPU (16T) | GPU | Speedup |
-|------:|------:|----------:|--------:|--------:|
-| 1,000 | 26k | 3.3 ms | 2.4 ms | 1.4x |
-| 5,000 | 130k | 4.3 ms | 2.4 ms | 1.8x |
-| 10,000 | 261k | 6.7 ms | 2.6 ms | 2.6x |
-| 50,000 | 1.3M | 26 ms | 4.4 ms | 5.8x |
-| 100,000 | 2.6M | 37 ms | 7.4 ms | 5.0x |
+| Atoms | Pairs | CPU (1T) | CPU (16T) | GPU | GPU Speedup |
+|------:|------:|---------:|----------:|--------:|------------:|
+| 1,000 | 26k | 8 ms | 3.3 ms | 2.4 ms | 3.3x |
+| 5,000 | 130k | 41 ms | 4.3 ms | 2.4 ms | 17x |
+| 10,000 | 261k | 82 ms | 6.7 ms | 2.6 ms | 32x |
+| 50,000 | 1.3M | 430 ms | 26 ms | 4.4 ms | 98x |
+| 100,000 | 2.6M | 880 ms | 37 ms | 7.4 ms | 119x |
 
 GPU throughput: ~360 million pairs/second for large systems.
+
+*Note: GPU speedup is relative to CPU (1T). Run `scripts/benchmark.jl` with `-t 1` and `-t 16` to reproduce.*

@@ -2,11 +2,19 @@
 """
 Performance benchmark for NeighbourLists.jl
 
-Compares sort-based implementation on CPU (multi-threaded via KernelAbstractions) vs GPU.
+Compares sort-based implementation on CPU (single-threaded and multi-threaded) vs GPU.
 Results are used in the README.md benchmark table.
 
 Usage:
+    # Multi-threaded CPU benchmark (16 threads) + GPU
     julia --project -t 16 scripts/benchmark.jl
+
+    # Single-threaded CPU benchmark (for 1T column in README)
+    julia --project -t 1 scripts/benchmark.jl
+
+To get complete benchmark data for README:
+1. Run with -t 1 to get CPU (1T) times
+2. Run with -t 16 (or desired thread count) to get CPU (nT) and GPU times
 """
 
 using Pkg
