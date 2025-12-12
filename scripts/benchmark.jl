@@ -2,26 +2,22 @@
 """
 Performance benchmark for NeighbourLists.jl
 
-Compares sort-based implementation on CPU (single-threaded and multi-threaded) vs GPU.
+Compares legacy (linked-list), sort-based CPU (multi-threaded), and GPU implementations.
 Results are used in the README.md benchmark table.
 
 Usage:
     # Multi-threaded CPU benchmark (16 threads) + GPU
     julia --project -t 16 scripts/benchmark.jl
 
-    # Single-threaded CPU benchmark (for 1T column in README)
+    # Single-threaded CPU benchmark
     julia --project -t 1 scripts/benchmark.jl
-
-To get complete benchmark data for README:
-1. Run with -t 1 to get CPU (1T) times
-2. Run with -t 16 (or desired thread count) to get CPU (nT) and GPU times
 """
 
 using Pkg
 Pkg.activate(dirname(@__DIR__))
 
 using NeighbourLists
-using NeighbourLists: build_cell_list, materialize_pairlist, npairs
+using NeighbourLists: build_cell_list, materialize_pairlist, npairs, PairList, SVec
 using StaticArrays
 using LinearAlgebra
 using Printf
@@ -113,12 +109,25 @@ function run_benchmark(; n_atoms_list=[1000, 5000, 10000, 50000, 100000],
         row = Dict(
             :atoms => n_atoms,
             :pairs => format_pairs(n_pairs),
+            :legacy_time => "-",
             :cpu_time => "-",
             :gpu_time => "-",
-            :speedup => "-"
+            :speedup_vs_legacy => "-"
         )
 
-        # CPU benchmark
+        # Convert to SVec for legacy API
+        X_svec = [SVec(x...) for x in X]
+
+        # Legacy (linked-list) benchmark - suppress deprecation warnings
+        if n_atoms <= 100000
+            t_legacy = @belapsed begin
+                nlist = PairList($X_svec, $cutoff, $cell, $pbc; int_type=Int32)
+            end samples=5 evals=1
+            row[:legacy_time] = format_time(t_legacy)
+            row[:t_legacy_raw] = t_legacy
+        end
+
+        # Sort-based CPU benchmark
         if n_atoms <= 100000
             t_cpu = @belapsed begin
                 clist = build_cell_list($X, $cutoff, $cell, $pbc; backend=CPU())
@@ -143,10 +152,10 @@ function run_benchmark(; n_atoms_list=[1000, 5000, 10000, 50000, 100000],
             row[:gpu_time] = format_time(t_gpu)
             row[:t_gpu_raw] = t_gpu
 
-            # Speedup
-            if haskey(row, :t_cpu_raw)
-                speedup = row[:t_cpu_raw] / t_gpu
-                row[:speedup] = @sprintf("%.1fx", speedup)
+            # Speedup vs legacy
+            if haskey(row, :t_legacy_raw)
+                speedup = row[:t_legacy_raw] / t_gpu
+                row[:speedup_vs_legacy] = @sprintf("%.1fx", speedup)
             end
         end
 
@@ -156,24 +165,25 @@ function run_benchmark(; n_atoms_list=[1000, 5000, 10000, 50000, 100000],
     # Build table data
     atoms_col = [r[:atoms] for r in results]
     pairs_col = [r[:pairs] for r in results]
+    legacy_col = [r[:legacy_time] for r in results]
     cpu_col = [r[:cpu_time] for r in results]
 
     if cuda_available
         gpu_col = [r[:gpu_time] for r in results]
-        speedup_col = [r[:speedup] for r in results]
+        speedup_col = [r[:speedup_vs_legacy] for r in results]
 
-        data = hcat(atoms_col, pairs_col, cpu_col, gpu_col, speedup_col)
-        header = ["Atoms", "Pairs", "CPU ($(Threads.nthreads())T)", "GPU", "Speedup"]
+        data = hcat(atoms_col, pairs_col, legacy_col, cpu_col, gpu_col, speedup_col)
+        header = ["Atoms", "Pairs", "Legacy", "CPU ($(Threads.nthreads())T)", "GPU", "Speedup"]
     else
-        data = hcat(atoms_col, pairs_col, cpu_col)
-        header = ["Atoms", "Pairs", "CPU ($(Threads.nthreads())T)"]
+        data = hcat(atoms_col, pairs_col, legacy_col, cpu_col)
+        header = ["Atoms", "Pairs", "Legacy", "CPU ($(Threads.nthreads())T)"]
     end
 
-    # Print table using PrettyTables
+    # Print table using PrettyTables (v3.x API)
     pretty_table(data;
-        header = header,
-        backend = Val(:markdown),
-        alignment = [:r, :r, :r, :r, :r][1:length(header)]
+        backend = :markdown,
+        column_labels = header,
+        alignment = [:r for _ in 1:length(header)]
     )
 
     # GPU throughput for large system
