@@ -108,3 +108,10 @@ Benchmarks on NVIDIA RTX A4500 (cutoff = 5.0 Å, density = 0.05 atoms/Å³):
 GPU throughput: ~360 million pairs/second for large systems.
 
 *Note: GPU speedup is relative to CPU (1T). Run `scripts/benchmark.jl` with `-t 1` and `-t 16` to reproduce.*
+
+
+### Acknowledgements
+
+- Original inspiration from [matscipy](https://github.com/libAtoms/matscipy) neighbourlist written by Lars Pastewka
+- Linked-list approach was implemented by Christoph Ortner
+- Sort-based approach idea proposed by Teemu Järvinen and Timon Gutleb, and implemented by James Kermode
