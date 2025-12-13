@@ -43,13 +43,13 @@ X = [SVector{3,Float64}(rand(3)...) for _ in 1:1000]  # positions
 cell = SMatrix{3,3,Float64}(10.0*I)                    # 10x10x10 cell
 pbc = SVector{3,Bool}(true, true, true)                # periodic
 
-nlist = PairList(X, 3.0, cell, pbc)
-j, R = neigs(nlist, 1)
+nlist = neighbour_list(X, 3.0, cell, pbc)
+j, R = neighbours(nlist, 1)
 ```
 
-## Sort-Based API (CPU and GPU)
+## Unified API (CPU and GPU)
 
-The package provides a unified sort-based cell list that works on both CPU and GPU with the same API. The backend is automatically detected from the array type.
+The `neighbour_list()` function provides a unified entry point that works on both CPU and GPU with the same API. The backend is automatically detected from the array type.
 
 ### CPU Example (Multi-threaded)
 
@@ -62,12 +62,11 @@ X = [SVector{3,Float64}(L*rand(), L*rand(), L*rand()) for _ in 1:10000]
 cell = SMatrix{3,3,Float64}(L*I)
 pbc = SVector{3,Bool}(true, true, true)
 
-# Build cell list and materialize pairs
-clist = build_cell_list(X, 3.0, cell, pbc)
-nlist = materialize_pairlist(clist)
+# Build neighbour list (uses sort-based algorithm with multi-threading)
+nlist = neighbour_list(X, 3.0, cell, pbc)
 
 # Access neighbours of atom 1
-j, R = neigs(nlist, 1)
+j, R = neighbours(nlist, 1)
 ```
 
 ### GPU Example (CUDA, ROCm, Metal, oneAPI)
@@ -83,13 +82,28 @@ cell = SMatrix{3,3,Float64}(L*I)
 pbc = SVector{3,Bool}(true, true, true)
 
 # Same API - backend auto-detected from array type
-clist = build_cell_list(X, 3.0, cell, pbc)
-nlist = materialize_pairlist(clist)
+nlist = neighbour_list(X, 3.0, cell, pbc)
 ```
 
-**What's the same:** The `build_cell_list` and `materialize_pairlist` API is identical. Cell matrix, cutoff, and boundary conditions work the same way.
+**What's the same:** The `neighbour_list()` API is identical on CPU and GPU. Cell matrix, cutoff, and boundary conditions work the same way.
 
 **What's different:** Only the array type changes (`Vector` vs `CuArray`/`ROCArray`/etc.). The backend is automatically detected - no need to specify it manually.
+
+### Lazy Mode (Memory Efficient)
+
+For large systems where materializing all pairs is memory-intensive, use lazy mode:
+
+```julia
+# Returns a SortedCellList instead of materializing all pairs
+clist = neighbour_list(X, 3.0, cell, pbc; lazy=true)
+
+# Iterate without storing all pairs in memory
+for i in 1:nsites(clist)
+    for_each_neighbour(clist, i) do j, R, S
+        # process neighbour j with distance vector R and shift S
+    end
+end
+```
 
 The implementation uses [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl) for portable parallelism and [AcceleratedKernels.jl](https://github.com/JuliaGPU/AcceleratedKernels.jl) for portable sorting. On CPU this enables multi-threading; on GPU it runs native parallel kernels.
 
