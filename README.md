@@ -78,7 +78,7 @@ using AtomsBuilder, NeighbourLists, Unitful
 
 sys = bulk(:Cu, cubic=true) * (4, 4, 4)
 nlist = PairList(sys, 5.0u"Å")
-j, R = neigs(nlist, 1)  # neighbours of atom 1
+j, R = neighbours(nlist, 1)  # neighbours of atom 1
 ```
 
 The implementation uses [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl) for portable parallelism and [AcceleratedKernels.jl](https://github.com/JuliaGPU/AcceleratedKernels.jl) for portable sorting. On CPU this enables multi-threading; on GPU it runs native parallel kernels.
