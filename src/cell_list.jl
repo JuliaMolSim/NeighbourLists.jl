@@ -48,26 +48,42 @@ end
 @inline bin_trunc(i::TI, pbc::Bool, n::TI) where {TI <: Integer} =
       pbc ? TI(i) : bin_trunc(i, n)
 
-"applies bin_trunc to open bdry and bin_wrap to periodic bdry"
+"applies bin_trunc to open bdry and bin_wrap to periodic bdry (scalar version)"
 @inline bin_wrap_or_trunc(i::Integer, pbc::Integer, n::Integer) =
       pbc ? bin_wrap(i, n) : bin_trunc(i, n)
 
-"Map particle position to a (cartesian) cell index"
-@inline position_to_cell_index(inv_cell::SMat{T}, x::SVec{T}, ns::SVec{TI}
-         ) where {T, TI <: Integer} =
-   floor.(TI, ((inv_cell' * x) .* ns .+ 1))
+"""
+Map particle position to a (cartesian) cell index.
+GPU-compatible: uses explicit scalar construction instead of broadcasting.
+"""
+@inline function position_to_cell_index(inv_cell::SMat{T}, x::SVec{T},
+                                        ncells::SVec{TI}) where {T, TI <: Integer}
+    frac = inv_cell' * x
+    return SVec{TI}(
+        floor(TI, frac[1] * ncells[1] + one(TI)),
+        floor(TI, frac[2] * ncells[2] + one(TI)),
+        floor(TI, frac[3] * ncells[3] + one(TI))
+    )
+end
 
 
 # ------------ The next two functions are the only dimension-dependent
 #              parts of the code!
 
-# an extension of sub2ind for the case when i is a vector (cartesian index)
-# @inline Base.sub2ind(dims::NTuple{3,TI}, i::SVec{TI}) where {TI <: Integer} =
-#    sub2ind(dims, i[1], i[2], i[3])
-# WARNING: this smells like a performance regression!
-# WARNING: `LinearIndices` always returnsstores Int, not TI!!!
-@inline _sub2ind(dims::NTuple{3,TI}, i::SVec{TI}) where {TI <: Integer} =
-   TI( (LinearIndices(dims))[i[1], i[2], i[3]] )
+"""
+Convert 3D cartesian index to linear index (1-based, column-major).
+GPU-compatible: uses explicit arithmetic instead of LinearIndices.
+"""
+@inline function _sub2ind(dims::NTuple{3,TI}, idx::NTuple{3,TI}) where TI
+    return idx[1] + (idx[2] - one(TI)) * dims[1] +
+           (idx[3] - one(TI)) * dims[1] * dims[2]
+end
+
+@inline _sub2ind(dims::NTuple{3,TI}, idx::SVec{TI}) where TI =
+    _sub2ind(dims, idx.data)
+
+@inline _sub2ind(dims::SVec{TI}, idx::SVec{TI}) where TI =
+    _sub2ind(dims.data, idx.data)
 
 lengths(C::SMat{T}) where {T} =
    det(C) ./ SVec{T}(norm(C[2,:]×C[3,:]), norm(C[3,:]×C[1,:]), norm(C[1,:]×C[2,:]))
@@ -75,18 +91,6 @@ lengths(C::SMat{T}) where {T} =
 
 # ====================== GPU-Compatible Unified Helpers =====================
 # These functions work in both CPU and GPU kernel contexts (no dynamic allocation)
-
-"""
-Convert 3D cartesian index to linear index (1-based, column-major).
-GPU-compatible version using explicit arithmetic instead of LinearIndices.
-"""
-@inline function _sub2ind_scalar(dims::NTuple{3,TI}, idx::NTuple{3,TI}) where TI
-    return idx[1] + (idx[2] - one(TI)) * dims[1] +
-           (idx[3] - one(TI)) * dims[1] * dims[2]
-end
-
-@inline _sub2ind_scalar(dims::SVec{TI}, idx::SVec{TI}) where TI =
-    _sub2ind_scalar(dims.data, idx.data)
 
 """
 Wrap cell index for periodic boundary and compute shift.
@@ -110,25 +114,11 @@ Returns (wrapped_index, shift).
 end
 
 """
-Convert position to cell index using explicit scalar construction.
-GPU-compatible version that avoids broadcasting.
-"""
-@inline function position_to_cell_index_scalar(inv_cell::SMat{T}, x::SVec{T},
-                                                ncells::SVec{TI}) where {T, TI}
-    frac = inv_cell' * x
-    return SVec{TI}(
-        floor(TI, frac[1] * ncells[1] + one(TI)),
-        floor(TI, frac[2] * ncells[2] + one(TI)),
-        floor(TI, frac[3] * ncells[3] + one(TI))
-    )
-end
-
-"""
 Apply wrap or truncation to each component of a cell index vector.
-GPU-compatible version using explicit component access.
+GPU-compatible: uses explicit component access instead of broadcasting.
 """
-@inline function bin_wrap_or_trunc_vec(ci::SVec{TI}, pbc::SVec{Bool},
-                                        ncells::SVec{TI}) where TI
+@inline function bin_wrap_or_trunc(ci::SVec{TI}, pbc::SVec{Bool},
+                                   ncells::SVec{TI}) where TI
     c1 = pbc[1] ? bin_wrap(ci[1], ncells[1]) : clamp(ci[1], one(TI), ncells[1])
     c2 = pbc[2] ? bin_wrap(ci[2], ncells[2]) : clamp(ci[2], one(TI), ncells[2])
     c3 = pbc[3] ? bin_wrap(ci[3], ncells[3]) : clamp(ci[3], one(TI), ncells[3])
@@ -621,7 +611,7 @@ enabling efficient parallel traversal.
 function build_cell_list(X::AbstractVector{<:SVec{T}}, cutoff::Real,
                          cell::AbstractMatrix, pbc;
                          int_type::Type{TI} = Int32,
-                         backend = get_backend(X)) where {T, TI}
+                         backend = get_array_backend(X)) where {T, TI}
 
     cell_mat = SMat{T}(cell)
     pbc_vec = SVec{Bool}(pbc)
@@ -795,30 +785,6 @@ For non-periodic, we skip cells outside the domain bounds.
     end
 end
 
-# Legacy version that returns array (for compatibility) - avoid using in hot paths
-function _adjacent_cells(ci::SVec{TI}, ncells::SVec{TI}, pbc::SVec{Bool},
-                         nxyz::SVec{TI}) where TI
-    result = Tuple{TI, SVec{TI}}[]
-    seen = Set{Tuple{TI, SVec{TI}}}()
-
-    _for_each_adjacent_cell(ci, ncells, pbc, nxyz) do linear_idx, cell_shift
-        key = (linear_idx, cell_shift)
-        if !(key in seen)
-            push!(seen, key)
-            push!(result, key)
-        end
-    end
-    return result
-end
-
-@inline function _wrap_cell_index(i::TI, n::TI, pbc::Bool) where TI
-    if pbc
-        return bin_wrap(i, n)
-    else
-        return bin_trunc(i, n)
-    end
-end
-
 @inline function _compute_shift(i::TI, n::TI, pbc::Bool) where TI
     if !pbc
         return zero(TI)
@@ -921,76 +887,7 @@ function get_neighbours(clist::SortedCellList{T,TI}, i::Integer) where {T, TI}
 end
 
 
-# ==================== Materialize PairList from SortedCellList ====================
-
-"""
-    materialize_pairlist(clist::SortedCellList; backend=CPU())
-
-Convert a SortedCellList to a PairList by computing all pairs.
-
-Uses a two-pass algorithm for parallelization:
-1. Count neighbours per atom (parallel with KernelAbstractions)
-2. Fill pair arrays (parallel with KernelAbstractions)
-
-This approach enables multi-threaded CPU execution via KernelAbstractions.
-"""
-function materialize_pairlist(clist::SortedCellList{T, TI, <:Vector};
-                              backend = get_backend(clist.X_orig)) where {T, TI}
-    nat = nsites(clist)
-
-    if nat == 0
-        return PairList{T, TI, typeof(clist.X_orig), Vector{TI}, Vector{SVec{TI}}}(
-            clist.X_orig, clist.cell, clist.cutoff,
-            Vector{TI}(), Vector{TI}(), Vector{SVec{TI}}(), ones(TI, 1))
-    end
-
-    # Compute how many cells to check in each direction
-    lens = lengths(clist.cell)
-    nxyz = ceil.(TI, clist.cutoff * (clist.ncells ./ abs.(lens)))
-    cutoff_sq = clist.cutoff^2
-
-    # ===== Pass 1: Count neighbours per atom (parallel) =====
-    counts = zeros(TI, nat)
-
-    kernel1 = count_neighbours_kernel!(backend)
-    kernel1(counts, clist.X_orig, clist.cell_offsets, clist.perm,
-            clist.inv_cell, clist.cell, clist.ncells, clist.pbc,
-            cutoff_sq, nxyz; ndrange=nat)
-    synchronize(backend)
-
-    # ===== Step 2: Compute offsets via prefix sum =====
-    offsets = Vector{TI}(undef, nat + 1)
-    offsets[1] = one(TI)
-    for i in 1:nat
-        offsets[i + 1] = offsets[i] + counts[i]
-    end
-    total_pairs = offsets[end] - one(TI)
-
-    if total_pairs == 0
-        first_arr = ones(TI, nat + 1)
-        return PairList{T, TI, typeof(clist.X_orig), Vector{TI}, Vector{SVec{TI}}}(
-            clist.X_orig, clist.cell, clist.cutoff,
-            Vector{TI}(), Vector{TI}(), Vector{SVec{TI}}(), first_arr)
-    end
-
-    # ===== Step 3: Allocate pair arrays =====
-    i_arr = Vector{TI}(undef, total_pairs)
-    j_arr = Vector{TI}(undef, total_pairs)
-    S_arr = Vector{SVec{TI}}(undef, total_pairs)
-
-    # ===== Pass 2: Fill pair arrays (parallel) =====
-    kernel2 = fill_pairs_kernel!(backend)
-    kernel2(i_arr, j_arr, S_arr, offsets, clist.X_orig, clist.cell_offsets,
-            clist.perm, clist.inv_cell, clist.cell, clist.ncells, clist.pbc,
-            cutoff_sq, nxyz; ndrange=nat)
-    synchronize(backend)
-
-    return PairList{T, TI, typeof(clist.X_orig), Vector{TI}, Vector{SVec{TI}}}(
-                    clist.X_orig, clist.cell, clist.cutoff,
-                    i_arr, j_arr, S_arr, offsets)
-end
-
-# GPU version - defined in gpu_kernels.jl after the GPU functions are loaded
+# materialize_pairlist is defined in gpu_kernels.jl with unified CPU/GPU support
 
 
 # ==================== New API: PairList with backend ====================
@@ -1004,7 +901,7 @@ Uses sort-based cell list construction which is parallelizable.
 """
 function PairList(X::AbstractVector{<:SVec}, cutoff::Real,
                   cell::AbstractMatrix, pbc;
-                  backend = get_backend(X),
+                  backend = get_array_backend(X),
                   int_type::Type = Int32)
     clist = build_cell_list(X, cutoff, cell, pbc;
                             int_type=int_type, backend=backend)

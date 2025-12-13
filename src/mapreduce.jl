@@ -109,6 +109,38 @@ function maptosites_d!(df::FT, out::AbstractVector, it::SiteIterator) where FT
 end
 
 
+# ==================== Threading Helper ====================
+
+"""
+    threaded_accumulate!(f, out, range)
+
+Execute `f(thread_out, item)` for each item in `range` in parallel,
+accumulating results into `out` using thread-local copies.
+
+`f(thread_out, item)` should modify `thread_out` in-place for each item.
+Results from all threads are reduced back into `out`.
+"""
+function threaded_accumulate!(f::F, out::AbstractVector, range) where F
+    nt = nthreads()
+    if nt == 1
+        for item in range
+            f(out, item)
+        end
+    else
+        max_tid = Threads.maxthreadid()
+        outs = [i == 1 ? out : zeros(eltype(out), length(out)) for i in 1:max_tid]
+        @threads for item in range
+            tid = threadid()
+            f(outs[tid], item)
+        end
+        for tid in 2:max_tid
+            out .+= outs[tid]
+        end
+    end
+    return out
+end
+
+
 # ==================== KernelAbstractions-based operations ====================
 
 export map_sites!, map_pairs!, map_pairs_d!, map_pairs_d_vec!
@@ -184,31 +216,18 @@ function map_pairs!(f::F, out::AbstractVector, nlist::PairList{T,TI};
 
     if backend isa CPU
         # For CPU, use thread-local accumulation
-        nt = nthreads()
-        if nt == 1
-            _map_pairs_serial!(f, out, nlist, symmetric)
-        else
-            # Thread-local copies - use maxthreadid() for Julia 1.12+ thread migration
-            max_tid = Threads.maxthreadid()
-            outs = [i == 1 ? out : zeros(eltype(out), length(out)) for i in 1:max_tid]
-            @threads for n in 1:np
-                tid = threadid()
-                i, j = nlist.i[n], nlist.j[n]
-                if !symmetric || i < j
-                    R = _getR(nlist, n)
-                    val = f(i, j, R)
-                    if symmetric
-                        val_half = val / 2
-                        outs[tid][i] += val_half
-                        outs[tid][j] += val_half
-                    else
-                        outs[tid][i] += val
-                    end
+        threaded_accumulate!(out, 1:np) do thread_out, n
+            i, j = nlist.i[n], nlist.j[n]
+            if !symmetric || i < j
+                R = _getR(nlist, n)
+                val = f(i, j, R)
+                if symmetric
+                    val_half = val / 2
+                    thread_out[i] += val_half
+                    thread_out[j] += val_half
+                else
+                    thread_out[i] += val
                 end
-            end
-            # Reduce
-            for tid in 2:max_tid
-                out .+= outs[tid]
             end
         end
     else
@@ -223,25 +242,6 @@ function map_pairs!(f::F, out::AbstractVector, nlist::PairList{T,TI};
         synchronize(backend)
     end
 
-    return out
-end
-
-function _map_pairs_serial!(f::F, out, nlist::PairList, symmetric::Bool) where F
-    np = npairs(nlist)
-    for n in 1:np
-        i, j = nlist.i[n], nlist.j[n]
-        if !symmetric || i < j
-            R = _getR(nlist, n)
-            val = f(i, j, R)
-            if symmetric
-                val_half = val / 2
-                out[i] += val_half
-                out[j] += val_half
-            else
-                out[i] += val
-            end
-        end
-    end
     return out
 end
 
@@ -347,35 +347,13 @@ end
 # CPU implementation for map_pairs_d! (shared logic)
 function _map_pairs_d_cpu!(f::F, out, nlist::PairList) where F
     np = npairs(nlist)
-    nt = nthreads()
-
-    if nt == 1
-        for n in 1:np
-            i, j = nlist.i[n], nlist.j[n]
-            if i < j
-                R = _getR(nlist, n)
-                val = f(i, j, R)
-                out[j] += val
-                out[i] -= val
-            end
-        end
-    else
-        # Use maxthreadid() for Julia 1.12+ thread migration
-        max_tid = Threads.maxthreadid()
-        outs = [i == 1 ? out : zeros(eltype(out), length(out)) for i in 1:max_tid]
-        @threads for n in 1:np
-            tid = threadid()
-            i, j = nlist.i[n], nlist.j[n]
-            if i < j
-                R = _getR(nlist, n)
-                val = f(i, j, R)
-                outs[tid][j] += val
-                outs[tid][i] -= val
-            end
-        end
-        for tid in 2:max_tid
-            out .+= outs[tid]
+    return threaded_accumulate!(out, 1:np) do thread_out, n
+        i, j = nlist.i[n], nlist.j[n]
+        if i < j
+            R = _getR(nlist, n)
+            val = f(i, j, R)
+            thread_out[j] += val
+            thread_out[i] -= val
         end
     end
-    return out
 end
