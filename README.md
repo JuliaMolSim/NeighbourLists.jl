@@ -11,45 +11,11 @@ using Pkg
 Pkg.add("NeighbourLists")
 ```
 
-## Two Implementations
-
-The package provides two cell list implementations:
-
-| Implementation | Algorithm | Parallelism | Use Case |
-|---------------|-----------|-------------|----------|
-| **Legacy** | Linked-list | Single-threaded | Small systems, compatibility |
-| **Sort-based** | Sort by cell ID | Multi-threaded CPU, GPU | Large systems, performance |
-
-Both produce identical results (validated in tests). The sort-based implementation is recommended for new code.
-
-## Quick Start
-
-### Using AtomsBase.jl
-
-```julia
-using AtomsBuilder, NeighbourLists, Unitful
-
-sys = bulk(:Cu, cubic=true) * (4, 4, 4)
-nlist = PairList(sys, 5.0u"Å")
-j, R = neigs(nlist, 1)  # neighbours of atom 1
-```
-
-### Using raw arrays
-
-```julia
-using NeighbourLists, StaticArrays, LinearAlgebra
-
-X = [SVector{3,Float64}(rand(3)...) for _ in 1:1000]  # positions
-cell = SMatrix{3,3,Float64}(10.0*I)                    # 10x10x10 cell
-pbc = SVector{3,Bool}(true, true, true)                # periodic
-
-nlist = neighbour_list(X, 3.0, cell, pbc)
-j, R = neighbours(nlist, 1)
-```
-
-## Unified API (CPU and GPU)
+## Unified API (Recommended)
 
 The `neighbour_list()` function provides a unified entry point that works on both CPU and GPU with the same API. The backend is automatically detected from the array type.
+
+> **Deprecation Notice:** The legacy `PairList` constructor using linked-list algorithm is deprecated and will be removed in v0.7.0. Use `neighbour_list()` instead. See [DEPRECATIONS.md](DEPRECATIONS.md) for migration details.
 
 ### CPU Example (Multi-threaded)
 
@@ -105,9 +71,41 @@ for i in 1:nsites(clist)
 end
 ```
 
+### AtomsBase.jl Integration
+
+```julia
+using AtomsBuilder, NeighbourLists, Unitful
+
+sys = bulk(:Cu, cubic=true) * (4, 4, 4)
+nlist = PairList(sys, 5.0u"Å")
+j, R = neigs(nlist, 1)  # neighbours of atom 1
+```
+
 The implementation uses [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl) for portable parallelism and [AcceleratedKernels.jl](https://github.com/JuliaGPU/AcceleratedKernels.jl) for portable sorting. On CPU this enables multi-threading; on GPU it runs native parallel kernels.
 
-### Benchmarks
+## Two Implementations
+
+The package provides two cell list implementations:
+
+| Implementation | Algorithm | Parallelism | Status |
+|---------------|-----------|-------------|--------|
+| **Sort-based** | Sort by cell ID | Multi-threaded CPU, GPU | Recommended |
+| **Legacy** | Linked-list | Single-threaded | Deprecated in v0.6, removed in v0.7 |
+
+Both produce identical results (validated in tests). The sort-based implementation accessed via `neighbour_list()` is recommended for all new code.
+
+## Deprecation Notice
+
+The legacy linked-list implementation (`CellList`, `_celllist_`, `_pairlist_`) is deprecated and will be removed in v0.7.0.
+
+**Migration summary:**
+- Replace `PairList(X, cutoff, cell, pbc)` with `neighbour_list(X, cutoff, cell, pbc)`
+- Replace `neigs(nlist, i)` with `neighbours(nlist, i)` (both still work)
+- For memory-efficient iteration, use `neighbour_list(...; lazy=true)` with `for_each_neighbour`
+
+See [DEPRECATIONS.md](DEPRECATIONS.md) for the complete migration guide.
+
+## Benchmarks
 
 Benchmarks on NVIDIA RTX A4500 (cutoff = 5.0 Å, density = 0.05 atoms/Å³):
 
@@ -124,7 +122,7 @@ GPU throughput: ~370 million pairs/second for large systems.
 *Note: Speedup is GPU vs Legacy. Run `julia --project -t N scripts/benchmark.jl` to reproduce.*
 
 
-### Acknowledgements
+## Acknowledgements
 
 - Original inspiration from [matscipy](https://github.com/libAtoms/matscipy) neighbourlist written by Lars Pastewka
 - Linked-list approach was implemented by Christoph Ortner
