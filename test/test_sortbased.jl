@@ -8,7 +8,7 @@ using NeighbourLists: SortedCellList, map_sites!, map_pairs!, map_pairs_d!,
 
     @testset "Basic Construction" begin
         X, C, L = rand_config(100)
-        clist = build_cell_list(X, L/3, C, SVec(true,true,true); backend=CPU())
+        clist = build_cell_list(X, L/3, C, FULL_PBC; backend=CPU())
 
         @test clist isa SortedCellList
         @test nsites(clist) == 100
@@ -36,49 +36,37 @@ using NeighbourLists: SortedCellList, map_sites!, map_pairs!, map_pairs_d!,
         # Elongated cell
         C2 = SMat(diagm([5.0, 5.0, 20.0]))
         X2 = [C2' * SVec(rand(), rand(), rand()) for _ in 1:80]
-        nlist1 = PairList(X2, 3.0, C2, SVec(true,true,true); int_type=Int32)
-        nlist2 = materialize_pairlist(build_cell_list(X2, 3.0, C2, SVec(true,true,true); backend=CPU()))
+        nlist1 = PairList(X2, 3.0, C2, FULL_PBC; int_type=Int32)
+        nlist2 = materialize_pairlist(build_cell_list(X2, 3.0, C2, FULL_PBC; backend=CPU()))
         @test compare_pairlists(nlist1, nlist2)
     end
 
     @testset "Edge Cases" begin
-        C = cubic_cell(10.0)
-        pbc = SVec(true, true, true)
-
-        # Single atom - no pairs
-        nlist = materialize_pairlist(build_cell_list([SVec(5.0,5.0,5.0)], 3.0, C, pbc; backend=CPU()))
-        @test npairs(nlist) == 0
-
-        # Two atoms within cutoff
-        nlist = materialize_pairlist(build_cell_list([SVec(5.0,5.0,5.0), SVec(5.0,5.0,6.0)], 3.0, C, pbc; backend=CPU()))
-        @test npairs(nlist) == 2
-
-        # Two atoms outside cutoff (no PBC)
-        nlist = materialize_pairlist(build_cell_list([SVec(1.0,1.0,1.0), SVec(8.0,8.0,8.0)], 3.0, C, SVec(false,false,false); backend=CPU()))
-        @test npairs(nlist) == 0
+        test_edge_cases() do X, cutoff, C, pbc
+            materialize_pairlist(build_cell_list(X, cutoff, C, pbc; backend=CPU()))
+        end
     end
 
     @testset "Large Cutoff" begin
         X, C, L = rand_config(30)
-        pbc = SVec(true, true, true)
         cutoff = L * 0.6  # > L/2
-        nlist1 = PairList(X, cutoff, C, pbc; int_type=Int32)
-        nlist2 = materialize_pairlist(build_cell_list(X, cutoff, C, pbc; backend=CPU()))
+        nlist1 = PairList(X, cutoff, C, FULL_PBC; int_type=Int32)
+        nlist2 = materialize_pairlist(build_cell_list(X, cutoff, C, FULL_PBC; backend=CPU()))
         @test compare_pairlists(nlist1, nlist2)
     end
 
     @testset "Integer Types" begin
         X, C, L = rand_config(100)
         for TI in [Int32, Int64]
-            nlist = materialize_pairlist(build_cell_list(X, L/3, C, SVec(true,true,true); backend=CPU(), int_type=TI))
+            nlist = materialize_pairlist(build_cell_list(X, L/3, C, FULL_PBC; backend=CPU(), int_type=TI))
             @test eltype(nlist.i) == TI
         end
     end
 
     @testset "Large Systems" begin
         test_sizes(sizes=[500, 1000, 2000]) do X, C, L, cutoff
-            nlist1 = PairList(X, cutoff, C, SVec(true,true,true); int_type=Int32)
-            nlist2 = materialize_pairlist(build_cell_list(X, cutoff, C, SVec(true,true,true); backend=CPU()))
+            nlist1 = PairList(X, cutoff, C, FULL_PBC; int_type=Int32)
+            nlist2 = materialize_pairlist(build_cell_list(X, cutoff, C, FULL_PBC; backend=CPU()))
             @test npairs(nlist1) == npairs(nlist2)
         end
     end
@@ -86,7 +74,7 @@ end
 
 @testset "Lazy Iteration" begin
     X, C, L = rand_config(100)
-    clist = build_cell_list(X, L/3, C, SVec(true,true,true); backend=CPU())
+    clist = build_cell_list(X, L/3, C, FULL_PBC; backend=CPU())
     nlist = materialize_pairlist(clist)
 
     # Count via lazy iteration
@@ -111,7 +99,7 @@ end
 
 @testset "get_neighbours / count_neighbours" begin
     X, C, L = rand_config(50)
-    clist = build_cell_list(X, L/3, C, SVec(true,true,true); backend=CPU())
+    clist = build_cell_list(X, L/3, C, FULL_PBC; backend=CPU())
     nlist = materialize_pairlist(clist)
 
     # Build expected counts from PairList
@@ -129,7 +117,7 @@ end
 
 @testset "MapReduce Functions" begin
     X, C, L = rand_config(100)
-    clist = build_cell_list(X, L/3, C, SVec(true,true,true); backend=CPU())
+    clist = build_cell_list(X, L/3, C, FULL_PBC; backend=CPU())
     nlist = materialize_pairlist(clist)
 
     @testset "map_sites!" begin

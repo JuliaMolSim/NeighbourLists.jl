@@ -62,12 +62,12 @@ else
 
             @testset "Basic Cubic - Full PBC" begin
                 X, C, L = rand_config(100)
-                test_vs_matscipy(X, C, L/3, SVec(true, true, true))
+                test_vs_matscipy(X, C, L/3, FULL_PBC)
             end
 
             @testset "No PBC" begin
                 X, C, L = rand_config(80)
-                test_vs_matscipy(X, C, L/4, SVec(false, false, false))
+                test_vs_matscipy(X, C, L/4, NO_PBC)
             end
 
             @testset "All PBC Combinations" begin
@@ -94,28 +94,27 @@ else
 
             @testset "Edge Cases" begin
                 C = cubic_cell(10.0)
-                pbc = SVec(true, true, true)
 
                 # Single atom
-                test_vs_matscipy([SVec(5.0, 5.0, 5.0)], C, 3.0, pbc)
+                test_vs_matscipy([SVec(5.0, 5.0, 5.0)], C, 3.0, FULL_PBC)
 
                 # Two atoms
-                test_vs_matscipy([SVec(5.0, 5.0, 5.0), SVec(5.0, 5.0, 6.0)], C, 3.0, pbc)
+                test_vs_matscipy([SVec(5.0, 5.0, 5.0), SVec(5.0, 5.0, 6.0)], C, 3.0, FULL_PBC)
             end
 
             @testset "Large Systems" begin
                 for N in [200, 500, 1000]
                     X, C, L = rand_config(N)
-                    nlist = materialize_pairlist(build_cell_list(X, L/4, C, SVec(true,true,true); backend=CPU()))
-                    i_ms, _, _ = matscipy_neighbourlist(X, C, SVec(true,true,true), L/4)
+                    nlist = materialize_pairlist(build_cell_list(X, L/4, C, FULL_PBC; backend=CPU()))
+                    i_ms, _, _ = matscipy_neighbourlist(X, C, FULL_PBC, L/4)
                     @test npairs(nlist) == length(i_ms)
                 end
             end
 
             @testset "Legacy PairList vs Matscipy" begin
                 X, C, L = rand_config(100)
-                nlist = PairList(X, L/3, C, SVec(true,true,true); int_type=Int32)
-                i_ms, j_ms, S_ms = matscipy_neighbourlist(X, C, SVec(true,true,true), L/3)
+                nlist = PairList(X, L/3, C, FULL_PBC; int_type=Int32)
+                i_ms, j_ms, S_ms = matscipy_neighbourlist(X, C, FULL_PBC, L/3)
                 @test npairs(nlist) == length(i_ms)
                 @test compare_with_matscipy(nlist, i_ms, j_ms, S_ms)
             end
@@ -126,8 +125,8 @@ else
 
                 @testset "GPU vs Matscipy" begin
                     X, C, L = rand_config(100)
-                    nlist = materialize_pairlist(build_cell_list(CuArray(X), L/3, C, SVec(true,true,true)))
-                    i_ms, j_ms, S_ms = matscipy_neighbourlist(X, C, SVec(true,true,true), L/3)
+                    nlist = materialize_pairlist(build_cell_list(CuArray(X), L/3, C, FULL_PBC))
+                    i_ms, j_ms, S_ms = matscipy_neighbourlist(X, C, FULL_PBC, L/3)
 
                     @test npairs(nlist) == length(i_ms)
                     gpu_set = pairs_to_set(Array(nlist.i), Array(nlist.j), Array(nlist.S))

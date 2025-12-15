@@ -8,6 +8,14 @@ using LinearAlgebra
 using StaticArrays
 using Test
 
+# ==================== Constants ====================
+
+"""Full periodic boundary conditions (all directions)"""
+const FULL_PBC = SVec(true, true, true)
+
+"""No periodic boundary conditions"""
+const NO_PBC = SVec(false, false, false)
+
 # ==================== Configuration Generators ====================
 
 """
@@ -330,5 +338,80 @@ function run_standard_correctness_suite(; gpu_array_fn=nothing)
         @testset "GPU all PBC" begin
             test_all_pbc_cpu_vs_gpu(gpu_array_fn)
         end
+    end
+end
+
+# ==================== Edge Case Test Runners ====================
+
+"""
+    test_edge_cases(build_fn)
+
+Run standard edge case tests using the provided build function.
+`build_fn(X, cutoff, C, pbc)` should return a PairList.
+"""
+function test_edge_cases(build_fn)
+    C = cubic_cell(10.0)
+
+    # Single atom - no pairs
+    nlist = build_fn([SVec(5.0, 5.0, 5.0)], 3.0, C, FULL_PBC)
+    @test npairs(nlist) == 0
+
+    # Two atoms within cutoff
+    nlist = build_fn([SVec(5.0, 5.0, 5.0), SVec(5.0, 5.0, 6.0)], 3.0, C, FULL_PBC)
+    @test npairs(nlist) == 2
+
+    # Two atoms outside cutoff (no PBC)
+    nlist = build_fn([SVec(1.0, 1.0, 1.0), SVec(8.0, 8.0, 8.0)], 3.0, C, NO_PBC)
+    @test npairs(nlist) == 0
+end
+
+"""
+    test_edge_cases_cpu_vs_gpu(to_gpu)
+
+Run edge case tests comparing CPU and GPU implementations.
+`to_gpu` is a function that converts arrays to GPU (e.g., CuArray).
+"""
+function test_edge_cases_cpu_vs_gpu(to_gpu)
+    C = cubic_cell(10.0)
+
+    # Single atom
+    X = [SVec(5.0, 5.0, 5.0)]
+    nlist_gpu = materialize_pairlist(build_cell_list(to_gpu(X), 3.0, C, FULL_PBC))
+    @test npairs(nlist_gpu) == 0
+
+    # Two atoms - compare CPU vs GPU
+    X = [SVec(5.0, 5.0, 5.0), SVec(5.0, 5.0, 6.0)]
+    nlist_cpu = materialize_pairlist(build_cell_list(X, 3.0, C, FULL_PBC; backend=CPU()))
+    nlist_gpu = materialize_pairlist(build_cell_list(to_gpu(X), 3.0, C, FULL_PBC))
+    @test npairs(nlist_cpu) == npairs(nlist_gpu)
+end
+
+"""
+    test_large_systems(build_fn; sizes=[500, 1000, 2000])
+
+Run tests with various system sizes.
+`build_fn(X, cutoff, C, pbc)` should return a PairList.
+"""
+function test_large_systems(build_fn; sizes=[500, 1000, 2000])
+    for N in sizes
+        X, C, L = rand_config(N)
+        cutoff = L * 0.25
+        nlist = build_fn(X, cutoff, C, FULL_PBC)
+        @test npairs(nlist) > 0
+    end
+end
+
+"""
+    test_large_systems_cpu_vs_gpu(to_gpu; sizes=[500, 1000, 2000])
+
+Run large system tests comparing CPU and GPU.
+"""
+function test_large_systems_cpu_vs_gpu(to_gpu; sizes=[500, 1000, 2000])
+    for N in sizes
+        X, C, L = rand_config(N)
+        cutoff = L * 0.25
+        nlist_cpu = materialize_pairlist(build_cell_list(X, cutoff, C, FULL_PBC; backend=CPU()))
+        nlist_gpu = materialize_pairlist(build_cell_list(to_gpu(X), cutoff, C, FULL_PBC))
+        @test npairs(nlist_cpu) == npairs(nlist_gpu)
     end
 end
