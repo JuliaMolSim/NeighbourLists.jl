@@ -2,7 +2,7 @@
 # Uses shared utilities from test_utils.jl (included by runtests.jl)
 
 using NeighbourLists: SortedCellList, map_sites!, map_pairs!, map_pairs_d!,
-                      count_neighbours, get_neighbours
+                      count_neighbours, neighbours, CPU  
 
 @testset "Sort-based Cell List" begin
 
@@ -97,7 +97,7 @@ end
     @test sort(lazy_pairs) == get_sorted_pairs(nlist)
 end
 
-@testset "get_neighbours / count_neighbours" begin
+@testset "neighbours / count_neighbours cell list" begin
     X, C, L = rand_config(50)
     clist = build_cell_list(X, L/3, C, FULL_PBC; backend=CPU())
     nlist = materialize_pairlist(clist)
@@ -110,7 +110,7 @@ end
 
     for i in 1:50
         @test count_neighbours(clist, i) == expected[i]
-        js, Rs, Ss = get_neighbours(clist, i)
+        js, Rs, Ss = neighbours(clist, i)
         @test length(js) == expected[i]
     end
 end

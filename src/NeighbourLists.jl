@@ -7,7 +7,8 @@ using KernelAbstractions: @kernel, @index, @Const, synchronize, get_backend
 using AcceleratedKernels
 
 # Re-export backend types for user convenience
-export CPU
+# I don't think this should be exported, it is too generic a name. 
+# export CPU
 
 # Default backend
 default_backend() = CPU()

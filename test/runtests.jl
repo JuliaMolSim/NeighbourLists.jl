@@ -29,7 +29,7 @@ println("# GPU backend = $(gpu_backend())")
    @testset "CellList (Legacy)" begin include("test_celllist.jl") end
    @testset "SortBased" begin include("test_sortbased.jl") end
    @testset "Unified API" begin include("test_unified_api.jl") end
-   include("test_atoms_base.jl")
+   @testset "AtomsBase Integration" begin include("test_atoms_base.jl") end
    @testset "GPU" begin include("test_gpu.jl") end
    @testset "Matscipy" begin include("test_matscipy.jl") end
 end

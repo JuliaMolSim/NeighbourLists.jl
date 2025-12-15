@@ -32,7 +32,7 @@ pbc = SVector{3,Bool}(true, true, true)
 nlist = neighbour_list(X, 3.0, cell, pbc)
 
 # Access neighbours of atom 1
-j, R = neighbours(nlist, 1)
+j, R, S = neighbours(nlist, 1)
 ```
 
 ### GPU Example (CUDA, ROCm, Metal, oneAPI)
@@ -78,7 +78,7 @@ using AtomsBuilder, NeighbourLists, Unitful
 
 sys = bulk(:Cu, cubic=true) * (4, 4, 4)
 nlist = neighbour_list(sys, 5.0u"Å")
-j, R = neighbours(nlist, 1)  # neighbours of atom 1
+j, R, S = neighbours(nlist, 1)  # neighbours of atom 1
 
 # Lazy mode also works with AtomsBase systems
 clist = neighbour_list(sys, 5.0u"Å"; lazy=true)
@@ -111,7 +111,7 @@ The legacy linked-list implementation (`CellList`, `_celllist_`, `_pairlist_`) i
 
 **Recommended changes:**
 - Use `neighbour_list(X, cutoff, cell, pbc)` instead of `PairList(X, cutoff, cell, pbc)`
-- Use `neighbours(nlist, i)` instead of `neigs(nlist, i)` (both still work)
+- Use `neighbours(nlist, i)` instead of `neigss(nlist, i)` (both still work)
 - For memory-efficient iteration, use `neighbour_list(...; lazy=true)` with `for_each_neighbour`
 
 See [DEPRECATIONS.md](DEPRECATIONS.md) for the complete migration guide.

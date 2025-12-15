@@ -17,7 +17,8 @@ using Pkg
 Pkg.activate(dirname(@__DIR__))
 
 using NeighbourLists
-using NeighbourLists: build_cell_list, materialize_pairlist, npairs, PairList, SVec
+using NeighbourLists: build_cell_list, materialize_pairlist, npairs, PairList, 
+                      SVec, CPU 
 using StaticArrays
 using LinearAlgebra
 using Printf

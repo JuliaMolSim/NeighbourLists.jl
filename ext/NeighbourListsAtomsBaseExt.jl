@@ -109,7 +109,7 @@ sys = bulk(:Cu, cubic=true) * (3,3,3)
 # Materialized pair list (default)
 nlist = neighbour_list(sys, 5.0u"Å")
 for i in 1:length(sys)
-    j, R = neighbours(nlist, i)
+    j, R, S = neighbours(nlist, i)
     # process neighbours...
 end
 

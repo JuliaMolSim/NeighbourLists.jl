@@ -78,7 +78,8 @@ using NeighbourLists
 nlist = neighbour_list(X, cutoff, cell, pbc)
 
 # Or explicitly with backend
-nlist = neighbour_list(X, cutoff, cell, pbc; backend=CPU())
+nlist = neighbour_list(X, cutoff, cell, pbc; 
+                       backend=NeighbourLists.CPU())
 
 # GPU support
 using CUDA

@@ -5,7 +5,9 @@ using KernelAbstractions
 using KernelAbstractions: @kernel, @index, @Const, synchronize
 using Atomix: @atomic
 
-export compute_cell_ids_kernel!, count_neighbours_kernel!, fill_pairs_kernel!
+# I don't think these should be exported 
+# these seem very much internal implementation details
+# export compute_cell_ids_kernel!, count_neighbours_kernel!, fill_pairs_kernel!
 
 # Note: Helper functions (_sub2ind, wrap_and_shift, position_to_cell_index,
 # bin_wrap_or_trunc, bin_wrap) are defined in cell_list.jl and work in GPU kernel contexts.

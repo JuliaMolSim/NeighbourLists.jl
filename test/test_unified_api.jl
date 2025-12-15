@@ -1,7 +1,8 @@
 # Tests for the unified high-level API (neighbour_list, neighbours, num_neighbours)
 # These functions are the recommended entry points for users
 
-using NeighbourLists: neighbour_list, neighbours, num_neighbours, max_neighbours, maxneigs
+using NeighbourLists: neighbour_list, neighbours, num_neighbours, 
+                      max_neighbours, maxneigs, CPU, neigss 
 
 @testset "Unified API" begin
 
@@ -90,26 +91,13 @@ end
 
         for i in 1:5
             # neighbours() should work as alias for neigs()
-            j_neigh, R_neigh = neighbours(nlist, i)
+            j_neigh, R_neigh, S_neigh = neighbours(nlist, i)
             j_neigs, R_neigs = neigs(nlist, i)
+            j1_neigs, R1_neigs, S1_neigs = neigss(nlist, i)
 
-            @test j_neigh == j_neigs
-            @test R_neigh == R_neigs
-        end
-    end
-
-    @testset "neighbours() with SortedCellList" begin
-        X, C, L = rand_config(50)
-        clist = neighbour_list(X, L/3, C, FULL_PBC; lazy=true)
-
-        for i in 1:5
-            # neighbours() should work with SortedCellList too
-            j_vec, R_vec, S_vec = neighbours(clist, i)
-            j_get, R_get, S_get = get_neighbours(clist, i)
-
-            @test j_vec == j_get
-            @test R_vec == R_get
-            @test S_vec == S_get
+            @test j_neigh == j_neigs == j1_neigs
+            @test S_neigh == S1_neigs
+            @test R_neigh == R_neigs == R1_neigs
         end
     end
 

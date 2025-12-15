@@ -4,7 +4,7 @@
 using NeighbourLists
 using NeighbourLists: SMat, SVec, nsites, npairs, SortedCellList,
                       build_cell_list, materialize_pairlist, for_each_neighbour,
-                      neigs, get_neighbours, count_neighbours
+                      neigs, count_neighbours, CPU 
 using LinearAlgebra
 using StaticArrays
 using Test
@@ -575,7 +575,7 @@ Returns true if consistent, false otherwise.
 function verify_neighbours_consistency(nlist, clist)
     for i in 1:nsites(nlist)
         j_pairlist, _ = neigs(nlist, i)
-        j_celllist, _, _ = get_neighbours(clist, i)
+        j_celllist, _, _ = neighbours(clist, i)
         if sort(j_pairlist) != sort(j_celllist)
             return false
         end

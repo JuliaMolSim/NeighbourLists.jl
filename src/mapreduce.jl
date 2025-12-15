@@ -2,6 +2,7 @@
 using Base.Threads
 
 export maptosites!, maptosites_d!
+export map_sites!, map_pairs!, map_pairs_d!, map_pairs_d_vec!
 
 
 function mt_split(niter::TI, maxthreads=MAX_THREADS[1]) where TI
@@ -143,7 +144,6 @@ end
 
 # ==================== KernelAbstractions-based operations ====================
 
-export map_sites!, map_pairs!, map_pairs_d!, map_pairs_d_vec!
 
 """
     map_sites!(f, out, clist::SortedCellList)
@@ -160,7 +160,7 @@ function map_sites!(f::F, out::AbstractVector, clist::SortedCellList{T,TI}) wher
     # For CPU backend, use threaded loop
     if backend isa CPU
         @threads for i in 1:nat
-            js, Rs, Ss = get_neighbours(clist, i)
+            js, Rs, Ss = neighbours(clist, i)
             out[i] = f(Rs)
         end
     else

@@ -1,7 +1,10 @@
 using Base.Threads, LinearAlgebra
 
 export npairs, nsites, maxneigs, max_neighbours, neigs, neighbours, neigs!
-export build_cell_list, materialize_pairlist, for_each_neighbour, get_neighbours, count_neighbours
+export build_cell_list, materialize_pairlist, for_each_neighbour, count_neighbours
+export neighbour_list, num_neighbours
+# should not be exported since it is an implementation detail 
+#  , bool_to_val
 
 # Legacy linked-list constructor - retained as reference implementation for testing
 # Use `neighbour_list(X, cutoff, cell, pbc)` for new code
@@ -580,9 +583,9 @@ neigss(nlist::PairList{T}, i0::Integer) where {T} =
     neighbours(nlist::PairList, i) -> (j_indices, R_vectors, S_vectors)
 
 Get all neighbours of atom `i` from a PairList.
-Alias for `neigs`. Also works with `SortedCellList`.
+Alias for `neigss`. Also works with `SortedCellList`.
 """
-neighbours(nlist::PairList, args...) = neigs(nlist, args...)
+neighbours(nlist::PairList, args...) = neigss(nlist, args...)
 
 """
 alias for `max_neigs`
@@ -868,11 +871,11 @@ function count_neighbours(clist::SortedCellList, i::Integer)
 end
 
 """
-    get_neighbours(clist::SortedCellList, i) -> (js, Rs, Ss)
+    neighbours(clist::SortedCellList, i) -> (js, Rs, Ss)
 
 Get all neighbours of atom i. Returns vectors of indices, displacements, and shifts.
 """
-function get_neighbours(clist::SortedCellList{T,TI}, i::Integer) where {T, TI}
+function neighbours(clist::SortedCellList{T,TI}, i::Integer) where {T, TI}
     js = TI[]
     Rs = SVec{T}[]
     Ss = SVec{TI}[]
@@ -910,7 +913,6 @@ end
 
 # ====================== Unified High-Level API ======================
 
-export neighbour_list, num_neighbours, bool_to_val
 
 """
     neighbour_list(X, cutoff, cell, pbc; backend=CPU(), lazy=false, int_type=Int32)
@@ -970,8 +972,6 @@ function _neighbour_list(lazy::Val{L}, X::AbstractVector{<:SVec}, cutoff::Real,
     end
 end
 
-# Extend neighbours (alias for neigs) to work with SortedCellList
-neighbours(clist::SortedCellList, i::Integer) = get_neighbours(clist, i)
 
 """
     num_neighbours(nlist_or_clist, i)

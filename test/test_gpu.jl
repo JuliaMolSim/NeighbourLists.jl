@@ -2,6 +2,8 @@
 # Uses shared utilities from test_utils.jl (included by runtests.jl)
 # Supports multiple GPU backends: CUDA, AMDGPU, Metal
 
+using NeighbourLists: CPU 
+
 if gpu_available()
     backend_name = gpu_backend()
     @info "Running GPU tests with $backend_name backend"
