@@ -1,7 +1,8 @@
 module NeighbourListsAtomsBaseExt
 
 using NeighbourLists
-using NeighbourLists: SMat, SVec, default_backend, build_cell_list, materialize_pairlist
+using NeighbourLists: SMat, SVec, default_backend, build_cell_list, materialize_pairlist,
+                      neighbour_list, neighbours
 using AtomsBase
 using AtomsBase: AbstractSystem, IsolatedCell, cell, cell_vectors, position, periodicity, n_dimensions
 using StaticArrays: SVector, SMatrix
@@ -83,6 +84,47 @@ function NeighbourLists.build_cell_list(ab::AbstractSystem, cutoff::Unitful.Leng
 
     return build_cell_list(r, ustrip(length_unit, cutoff), cell_matrix, pbc;
                            int_type=int_type, backend=backend)
+end
+
+"""
+    neighbour_list(system::AbstractSystem, cutoff::Unitful.Length; kwargs...)
+
+Unified entry point for building neighbour lists from AtomsBase systems.
+
+Returns a `PairList` by default. If `lazy=true`, returns a `SortedCellList`
+that can be iterated without materializing all pairs (memory efficient).
+
+# Keyword arguments
+- `length_unit`: Unit for positions (default: unit of cutoff)
+- `backend`: KernelAbstractions backend (default: CPU())
+- `lazy`: If true, return SortedCellList instead of materializing pairs
+- `int_type`: Integer type for indices (default: Int32)
+
+# Examples
+```julia
+using AtomsBuilder, Unitful
+
+sys = bulk(:Cu, cubic=true) * (3,3,3)
+
+# Materialized pair list (default)
+nlist = neighbour_list(sys, 5.0u"Å")
+for i in 1:length(sys)
+    j, R = neighbours(nlist, i)
+    # process neighbours...
+end
+
+# Lazy cell list (memory efficient)
+clist = neighbour_list(sys, 5.0u"Å"; lazy=true)
+```
+"""
+function NeighbourLists.neighbour_list(ab::AbstractSystem, cutoff::Unitful.Length;
+                                        length_unit=unit(cutoff),
+                                        backend=default_backend(),
+                                        lazy::Bool=false,
+                                        int_type::Type=Int32)
+    clist = build_cell_list(ab, cutoff; length_unit=length_unit,
+                            backend=backend, int_type=int_type)
+    return lazy ? clist : materialize_pairlist(clist; backend=backend)
 end
 
 end # module

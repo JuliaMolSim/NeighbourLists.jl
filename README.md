@@ -77,8 +77,14 @@ end
 using AtomsBuilder, NeighbourLists, Unitful
 
 sys = bulk(:Cu, cubic=true) * (4, 4, 4)
-nlist = PairList(sys, 5.0u"Å")
+nlist = neighbour_list(sys, 5.0u"Å")
 j, R = neighbours(nlist, 1)  # neighbours of atom 1
+
+# Lazy mode also works with AtomsBase systems
+clist = neighbour_list(sys, 5.0u"Å"; lazy=true)
+for_each_neighbour(clist, 1) do j, R, S
+    # process neighbour
+end
 ```
 
 The implementation uses [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl) for portable parallelism and [AcceleratedKernels.jl](https://github.com/JuliaGPU/AcceleratedKernels.jl) for portable sorting. On CPU this enables multi-threading; on GPU it runs native parallel kernels.
@@ -92,7 +98,12 @@ The package provides two cell list implementations:
 | **Sort-based** | Sort by cell ID | Multi-threaded CPU, GPU | Recommended |
 | **Legacy** | Linked-list | Single-threaded | Deprecated in v0.6, removed in v0.7 |
 
-Both produce identical results (validated in tests). The sort-based implementation accessed via `neighbour_list()` is recommended for all new code.
+Both produce identical results (validated in tests).
+
+**API Selection:**
+- `neighbour_list()` always uses the sort-based implementation (recommended)
+- `PairList(system::AbstractSystem, cutoff)` uses sort-based (for AtomsBase)
+- `PairList(X::Vector{SVec}, cutoff, cell, pbc)` uses legacy linked-list (deprecated)
 
 ## Deprecation Notice
 
