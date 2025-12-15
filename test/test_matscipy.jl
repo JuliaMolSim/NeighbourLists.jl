@@ -119,13 +119,13 @@ else
                 @test compare_with_matscipy(nlist, i_ms, j_ms, S_ms)
             end
 
-            if cuda_available
-                using CUDA
-                @info "Running GPU vs matscipy validation"
+            if gpu_available()
+                backend_name = gpu_backend()
+                @info "Running GPU ($backend_name) vs matscipy validation"
 
-                @testset "GPU vs Matscipy" begin
+                @testset "GPU vs Matscipy ($backend_name)" begin
                     X, C, L = rand_config(100)
-                    nlist = materialize_pairlist(build_cell_list(CuArray(X), L/3, C, FULL_PBC))
+                    nlist = materialize_pairlist(build_cell_list(to_gpu_array(X), L/3, C, FULL_PBC))
                     i_ms, j_ms, S_ms = matscipy_neighbourlist(X, C, FULL_PBC, L/3)
 
                     @test npairs(nlist) == length(i_ms)
@@ -134,19 +134,19 @@ else
                     @test gpu_set == ms_set
                 end
 
-                @testset "GPU Multiple Configs" begin
+                @testset "GPU Multiple Configs ($backend_name)" begin
                     for _ in 1:5
                         X, C, L = rand_config(rand(50:150))
                         cutoff = L * (0.25 + 0.25 * rand())
                         pbc = SVec(rand(Bool), rand(Bool), rand(Bool))
-                        nlist = materialize_pairlist(build_cell_list(CuArray(X), cutoff, C, pbc))
+                        nlist = materialize_pairlist(build_cell_list(to_gpu_array(X), cutoff, C, pbc))
                         i_ms, _, _ = matscipy_neighbourlist(X, C, pbc, cutoff)
                         @test npairs(nlist) == length(i_ms)
                     end
                 end
             else
                 @testset "GPU vs Matscipy (Skipped)" begin
-                    @test_skip "CUDA not available"
+                    @test_skip "No GPU backend available"
                 end
             end
         end

@@ -131,19 +131,136 @@ end
 
 # ==================== Backend Availability ====================
 
+# GPU backend state (initialized once)
+const GPU_STATE = Dict{Symbol, Any}(
+    :initialized => false,
+    :backend => :none,
+    :to_gpu => identity,
+    :gpu_array_type => nothing,
+)
+
+"""
+    init_gpu_backend!()
+
+Initialize GPU backend detection. Tries CUDA, then AMDGPU, then Metal.
+Sets global GPU state that can be queried with `gpu_available()`, `gpu_backend()`, etc.
+"""
+function init_gpu_backend!()
+    GPU_STATE[:initialized] && return GPU_STATE[:backend]
+
+    # Try CUDA first
+    try
+        CUDA = Base.require(Main, :CUDA)
+        # Use invokelatest to handle world age issues with dynamically loaded modules
+        if Base.invokelatest(CUDA.functional)
+            device_name = Base.invokelatest(CUDA.name, Base.invokelatest(CUDA.device))
+            @info "GPU Backend: CUDA" device=device_name
+            GPU_STATE[:backend] = :CUDA
+            GPU_STATE[:to_gpu] = x -> Base.invokelatest(CUDA.cu, x)
+            GPU_STATE[:gpu_array_type] = CUDA.CuArray
+            GPU_STATE[:initialized] = true
+            return :CUDA
+        else
+            @info "CUDA loaded but not functional"
+        end
+    catch e
+        @info "CUDA not available" exception=e
+    end
+
+    # Try AMDGPU
+    try
+        AMDGPU = Base.require(Main, :AMDGPU)
+        if Base.invokelatest(AMDGPU.functional)
+            @info "GPU Backend: AMDGPU"
+            GPU_STATE[:backend] = :AMDGPU
+            GPU_STATE[:to_gpu] = x -> Base.invokelatest(AMDGPU.roc, x)
+            GPU_STATE[:gpu_array_type] = AMDGPU.ROCArray
+            GPU_STATE[:initialized] = true
+            return :AMDGPU
+        else
+            @info "AMDGPU loaded but not functional"
+        end
+    catch e
+        @info "AMDGPU not available" exception=e
+    end
+
+    # Try Metal
+    try
+        Metal = Base.require(Main, :Metal)
+        if Base.invokelatest(Metal.functional)
+            @info "GPU Backend: Metal"
+            GPU_STATE[:backend] = :Metal
+            GPU_STATE[:to_gpu] = x -> Base.invokelatest(Metal.mtl, x)
+            GPU_STATE[:gpu_array_type] = Metal.MtlArray
+            GPU_STATE[:initialized] = true
+            return :Metal
+        else
+            @info "Metal loaded but not functional"
+        end
+    catch e
+        @info "Metal not available" exception=e
+    end
+
+    @info "No GPU backend available, using CPU"
+    GPU_STATE[:backend] = :none
+    GPU_STATE[:to_gpu] = identity
+    GPU_STATE[:gpu_array_type] = nothing
+    GPU_STATE[:initialized] = true
+    return :none
+end
+
+"""
+    gpu_available()
+
+Returns true if a GPU backend is available.
+"""
+function gpu_available()
+    GPU_STATE[:initialized] || init_gpu_backend!()
+    return GPU_STATE[:backend] != :none
+end
+
+"""
+    gpu_backend()
+
+Returns the name of the available GPU backend as a Symbol (:CUDA, :AMDGPU, :Metal, or :none).
+"""
+function gpu_backend()
+    GPU_STATE[:initialized] || init_gpu_backend!()
+    return GPU_STATE[:backend]
+end
+
+"""
+    to_gpu_array(x)
+
+Convert array `x` to the appropriate GPU array type for the available backend.
+Returns `x` unchanged if no GPU is available.
+"""
+function to_gpu_array(x)
+    GPU_STATE[:initialized] || init_gpu_backend!()
+    return GPU_STATE[:to_gpu](x)
+end
+
+"""
+    gpu_array_type()
+
+Returns the GPU array type for the available backend (e.g., CuArray, ROCArray, MtlArray),
+or `nothing` if no GPU is available.
+"""
+function gpu_array_type()
+    GPU_STATE[:initialized] || init_gpu_backend!()
+    return GPU_STATE[:gpu_array_type]
+end
+
+# Legacy function for backwards compatibility
 """
     check_cuda_available()
 
+DEPRECATED: Use `gpu_available()` instead.
 Check if CUDA is available and functional.
-Returns true if CUDA can be loaded and is functional.
 """
 function check_cuda_available()
-    try
-        cuda_mod = Base.require(Main, :CUDA)
-        return cuda_mod.functional()
-    catch
-        return false
-    end
+    GPU_STATE[:initialized] || init_gpu_backend!()
+    return GPU_STATE[:backend] == :CUDA
 end
 
 """

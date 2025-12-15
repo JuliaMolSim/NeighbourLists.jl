@@ -13,13 +13,16 @@ performance = true
 isCI = haskey(ENV, "CI")
 notCI = !isCI
 
-# Check for CUDA availability (for GPU tests)
+# Initialize GPU backend detection (supports CUDA, AMDGPU, Metal)
+init_gpu_backend!()
+
+# Legacy compatibility
 cuda_available = check_cuda_available()
 
 # ----------------- TESTS -------------------
 
 println("# threads = $(Base.Threads.nthreads())")
-println("# CUDA available = $(cuda_available)")
+println("# GPU backend = $(gpu_backend())")
 
 @testset "NeighbourLists" begin
    @testset "Aux" begin include("test_aux.jl") end
