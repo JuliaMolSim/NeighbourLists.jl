@@ -1,6 +1,9 @@
 using NeighbourLists
 using Test
 
+# Include shared test utilities
+include("test_utils.jl")
+
 # ---- FLAGS -----
 
 # whether to run performance tests
@@ -10,26 +13,23 @@ performance = true
 isCI = haskey(ENV, "CI")
 notCI = !isCI
 
-# TODO: switch the JuLIP test to an ASE test
-# check whether we have JuLIP
-# hasjulip = true
-# try
-#    using JuLIP
-# catch
-#    hasjulip = false
-# end
+# Initialize GPU backend detection (supports CUDA, AMDGPU, Metal)
+init_gpu_backend!()
+
+# Legacy compatibility
+cuda_available = check_cuda_available()
 
 # ----------------- TESTS -------------------
 
 println("# threads = $(Base.Threads.nthreads())")
+println("# GPU backend = $(gpu_backend())")
 
 @testset "NeighbourLists" begin
    @testset "Aux" begin include("test_aux.jl") end
-   @testset "CellList" begin include("test_celllist.jl") end
-   include("test_atoms_base.jl")
-
-   # pointless until we switch to comparing against ASE / matscipy
-   # if hasjulip
-   #    @testset "JuLIP" begin include("test_julip.jl") end
-   # end
+   @testset "CellList (Legacy)" begin include("test_celllist.jl") end
+   @testset "SortBased" begin include("test_sortbased.jl") end
+   @testset "Unified API" begin include("test_unified_api.jl") end
+   @testset "AtomsBase Integration" begin include("test_atoms_base.jl") end
+   @testset "GPU" begin include("test_gpu.jl") end
+   @testset "Matscipy" begin include("test_matscipy.jl") end
 end
