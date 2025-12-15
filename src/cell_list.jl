@@ -910,7 +910,7 @@ end
 
 # ====================== Unified High-Level API ======================
 
-export neighbour_list, num_neighbours
+export neighbour_list, num_neighbours, bool_to_val
 
 """
     neighbour_list(X, cutoff, cell, pbc; backend=CPU(), lazy=false, int_type=Int32)
@@ -945,14 +945,29 @@ for i in 1:nsites(clist)
 end
 ```
 """
+# Helper to convert Bool to Val for type stability
+bool_to_val(x::Bool) = Val(x)
+bool_to_val(x::Val) = x
+
 function neighbour_list(X::AbstractVector{<:SVec}, cutoff::Real,
                         cell::AbstractMatrix, pbc;
                         backend = get_array_backend(X),
-                        lazy::Bool = false,
+                        lazy::Union{Bool, Val} = false,
                         int_type::Type = Int32)
-    clist = build_cell_list(X, cutoff, cell, pbc;
-                            int_type=int_type, backend=backend)
-    return lazy ? clist : materialize_pairlist(clist; backend=backend)
+    return _neighbour_list(bool_to_val(lazy), X, cutoff, cell, pbc;
+                           backend=backend, int_type=int_type)
+end
+
+function _neighbour_list(lazy::Val{L}, X::AbstractVector{<:SVec}, cutoff::Real,
+                         cell::AbstractMatrix, pbc;
+                         backend = get_array_backend(X),
+                         int_type::Type = Int32) where {L}
+    clist = build_cell_list(X, cutoff, cell, pbc; int_type=int_type, backend=backend)
+    if L
+        return clist
+    else
+        return materialize_pairlist(clist; backend=backend)
+    end
 end
 
 # Extend neighbours (alias for neigs) to work with SortedCellList

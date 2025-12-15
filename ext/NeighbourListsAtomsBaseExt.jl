@@ -2,7 +2,7 @@ module NeighbourListsAtomsBaseExt
 
 using NeighbourLists
 using NeighbourLists: SMat, SVec, default_backend, build_cell_list, materialize_pairlist,
-                      neighbour_list, neighbours
+                      neighbour_list, neighbours, bool_to_val
 using AtomsBase
 using AtomsBase: AbstractSystem, IsolatedCell, cell, cell_vectors, position, periodicity, n_dimensions
 using StaticArrays: SVector, SMatrix
@@ -120,11 +120,23 @@ clist = neighbour_list(sys, 5.0u"Å"; lazy=true)
 function NeighbourLists.neighbour_list(ab::AbstractSystem, cutoff::Unitful.Length;
                                         length_unit=unit(cutoff),
                                         backend=default_backend(),
-                                        lazy::Bool=false,
+                                        lazy::Union{Bool, Val}=false,
                                         int_type::Type=Int32)
+    return _neighbour_list_ab(bool_to_val(lazy), ab, cutoff; length_unit=length_unit,
+                              backend=backend, int_type=int_type)
+end
+
+function _neighbour_list_ab(lazy::Val{L}, ab::AbstractSystem, cutoff::Unitful.Length;
+                            length_unit=unit(cutoff),
+                            backend=default_backend(),
+                            int_type::Type=Int32) where {L}
     clist = build_cell_list(ab, cutoff; length_unit=length_unit,
                             backend=backend, int_type=int_type)
-    return lazy ? clist : materialize_pairlist(clist; backend=backend)
+    if L
+        return clist
+    else
+        return materialize_pairlist(clist; backend=backend)
+    end
 end
 
 end # module
