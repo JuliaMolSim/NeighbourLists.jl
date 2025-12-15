@@ -34,14 +34,8 @@ using NeighbourLists: neighbour_list, neighbours, num_neighbours, max_neighbours
         # Lazy and materialized should give same results
         nlist = neighbour_list(X, cutoff, C, FULL_PBC; lazy=false)
 
-        # Count pairs via lazy iteration
-        lazy_count = 0
-        for i in 1:nsites(clist)
-            for_each_neighbour(clist, i) do j, R, S
-                lazy_count += 1
-            end
-        end
-        @test lazy_count == npairs(nlist)
+        # Count pairs via lazy iteration - should match materialized count
+        @test count_lazy_pairs(clist) == npairs(nlist)
     end
 
     @testset "neighbour_list() - Integer Types" begin
@@ -124,13 +118,8 @@ end
         nlist = neighbour_list(X, L/3, C, FULL_PBC)
         clist = neighbour_list(X, L/3, C, FULL_PBC; lazy=true)
 
-        for i in 1:10
-            j_pairlist, R_pairlist = neighbours(nlist, i)
-            j_celllist, R_celllist, _ = neighbours(clist, i)
-
-            # Should have same neighbours (order may differ)
-            @test sort(j_pairlist) == sort(j_celllist)
-        end
+        # Should have same neighbours for all atoms (order may differ)
+        @test verify_neighbours_consistency(nlist, clist)
     end
 end
 
@@ -140,12 +129,8 @@ end
         X, C, L = rand_config(50)
         nlist = neighbour_list(X, L/3, C, FULL_PBC)
 
-        # Count manually
-        expected_counts = zeros(Int, 50)
-        for idx in 1:npairs(nlist)
-            expected_counts[nlist.i[idx]] += 1
-        end
-
+        # Count manually and verify
+        expected_counts = count_manual_neighbours(nlist)
         for i in 1:50
             @test num_neighbours(nlist, i) == expected_counts[i]
         end

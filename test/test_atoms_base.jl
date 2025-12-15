@@ -48,16 +48,11 @@ using Unitful
         @test length(j) == 12
 
         # for_each_neighbour works
-        count = 0
-        for_each_neighbour(clist, 1) do j, R, S
-            count += 1
-        end
-        @test count == 12
+        @test count_neighbours(clist, 1) == 12
 
         # Lazy and materialized give same pair count
         nlist = neighbour_list(sys, cutoff)
-        lazy_total = sum(i -> length(neighbours(clist, i)[1]), 1:nsites(clist))
-        @test npairs(nlist) == lazy_total
+        @test npairs(nlist) == count_lazy_pairs(clist)
     end
 
     @testset "build_cell_list() - Direct" begin

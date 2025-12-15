@@ -3,7 +3,8 @@
 
 using NeighbourLists
 using NeighbourLists: SMat, SVec, nsites, npairs, SortedCellList,
-                      build_cell_list, materialize_pairlist, for_each_neighbour
+                      build_cell_list, materialize_pairlist, for_each_neighbour,
+                      neigs, get_neighbours, count_neighbours
 using LinearAlgebra
 using StaticArrays
 using Test
@@ -531,4 +532,53 @@ function test_large_systems_cpu_vs_gpu(to_gpu; sizes=[500, 1000, 2000])
         nlist_gpu = materialize_pairlist(build_cell_list(to_gpu(X), cutoff, C, FULL_PBC))
         @test npairs(nlist_cpu) == npairs(nlist_gpu)
     end
+end
+
+# ==================== Lazy Iteration Utilities ====================
+
+"""
+    count_lazy_pairs(clist)
+
+Count total pairs by iterating through a SortedCellList lazily.
+Useful for verifying lazy vs materialized pair counts match.
+"""
+function count_lazy_pairs(clist)
+    count = 0
+    for i in 1:nsites(clist)
+        for_each_neighbour(clist, i) do j, R, S
+            count += 1
+        end
+    end
+    return count
+end
+
+"""
+    count_manual_neighbours(nlist)
+
+Count neighbours per atom by manually iterating through pair list.
+Returns a vector where `result[i]` is the number of neighbours for atom i.
+"""
+function count_manual_neighbours(nlist)
+    counts = zeros(Int, nsites(nlist))
+    for idx in 1:npairs(nlist)
+        counts[nlist.i[idx]] += 1
+    end
+    return counts
+end
+
+"""
+    verify_neighbours_consistency(nlist, clist)
+
+Verify that PairList and SortedCellList return the same neighbours for each atom.
+Returns true if consistent, false otherwise.
+"""
+function verify_neighbours_consistency(nlist, clist)
+    for i in 1:nsites(nlist)
+        j_pairlist, _ = neigs(nlist, i)
+        j_celllist, _, _ = get_neighbours(clist, i)
+        if sort(j_pairlist) != sort(j_celllist)
+            return false
+        end
+    end
+    return true
 end

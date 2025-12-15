@@ -15,7 +15,7 @@ else
     try
         MATSCIPY = pyimport("matscipy.neighbours")
         NUMPY = pyimport("numpy")
-        matscipy_available = true
+        global matscipy_available = true
     catch e
         @info "matscipy not available: $e"
     end
