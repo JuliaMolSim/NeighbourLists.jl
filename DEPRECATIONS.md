@@ -1,19 +1,21 @@
-# Deprecation Timeline
+# API Migration Guide
 
-This document outlines the deprecation plan for NeighbourLists.jl as it transitions from the legacy linked-list algorithm to the unified sort-based implementation.
+This document outlines the transition from the legacy linked-list algorithm to the unified sort-based implementation in NeighbourLists.jl.
 
 ## Version 0.6.x (Current)
 
-The legacy linked-list implementation remains functional but will emit deprecation warnings. Users are encouraged to migrate to the new API.
+The sort-based implementation is now the recommended API. The legacy linked-list implementation remains available as a reference implementation used internally for testing correctness.
 
-### Deprecated Functions and Types
+### Legacy vs New API
 
-| Deprecated | Replacement | Notes |
-|------------|-------------|-------|
-| `PairList(X::Vector{SVec}, cutoff, cell, pbc)` (linked-list) | `neighbour_list(X, cutoff, cell, pbc)` or `PairList(X::AbstractVector, cutoff, cell, pbc; backend=CPU())` | Sort-based, parallelizable |
+| Legacy API | New API | Notes |
+|------------|---------|-------|
+| `PairList(X::Vector{SVec}, cutoff, cell, pbc)` | `neighbour_list(X, cutoff, cell, pbc)` | Sort-based, parallelizable |
 | `CellList` struct | `SortedCellList` | Used internally by new API |
 | `_celllist_` | `build_cell_list` | Internal function |
 | `_pairlist_` | `materialize_pairlist` | Internal function |
+
+> **Note:** The legacy implementation will be retained indefinitely as a reference implementation for validating correctness in tests. However, new code should use the unified `neighbour_list()` API.
 
 ### New Unified API
 
@@ -44,14 +46,7 @@ using AtomsBase, Unitful
 nlist = PairList(system, 5.0u"Å")
 ```
 
-## Version 0.7.0 (Planned)
-
-The legacy linked-list implementation will be removed. This includes:
-
-- Removal of `CellList` struct
-- Removal of `_celllist_` and `_pairlist_` internal functions
-- Removal of legacy `PairList(X::Vector{SVec}, ...)` constructor
-- All code will use the sort-based algorithm exclusively
+## Why Use the New API?
 
 ### Benefits of Sort-Based Algorithm
 
@@ -115,24 +110,6 @@ using AtomsBase, Unitful
 # Then use as before
 nlist = PairList(system, 5.0u"Å")
 clist = build_cell_list(system, 5.0u"Å")
-```
-
-## Suppressing Deprecation Warnings
-
-If you need to suppress warnings during migration:
-
-```julia
-using Logging
-with_logger(SimpleLogger(stderr, Logging.Error)) do
-    # code using deprecated API
-end
-```
-
-Or to suppress all deprecation warnings globally (not recommended for production):
-
-```julia
-Base.depwarn_mode[] = :none  # Suppress warnings
-Base.depwarn_mode[] = :warn  # Re-enable warnings (default)
 ```
 
 ## Questions?

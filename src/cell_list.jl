@@ -3,14 +3,14 @@ using Base.Threads, LinearAlgebra
 export npairs, nsites, maxneigs, max_neighbours, neigs, neighbours, neigs!
 export build_cell_list, materialize_pairlist, for_each_neighbour, get_neighbours, count_neighbours
 
-# Legacy linked-list constructor - DEPRECATED in v0.6, will be removed in v0.7
-# Use `neighbour_list(X, cutoff, cell, pbc)` or `PairList(X::AbstractVector, cutoff, cell, pbc; backend=CPU())`
+# Legacy linked-list constructor - retained as reference implementation for testing
+# Use `neighbour_list(X, cutoff, cell, pbc)` for new code
 function PairList(X::Vector{SVec{T}}, cutoff::AbstractFloat, cell::AbstractMatrix, pbc;
             int_type::Type = Int32, fixcell = true) where {T}
    Base.depwarn(
-       "PairList(X::Vector{SVec}, ...) using linked-list algorithm is deprecated. " *
-       "Use `neighbour_list(X, cutoff, cell, pbc)` or the sort-based constructor instead. " *
-       "The linked-list implementation will be removed in v0.7.",
+       "PairList(X::Vector{SVec}, ...) uses the legacy linked-list algorithm. " *
+       "Use `neighbour_list(X, cutoff, cell, pbc)` for the sort-based implementation " *
+       "with multi-threading and GPU support.",
        :PairList
    )
    _pairlist_(X, SMat{T}(cell), SVec{Bool}(pbc), T(cutoff), int_type, fixcell)

@@ -15,7 +15,7 @@ Pkg.add("NeighbourLists")
 
 The `neighbour_list()` function provides a unified entry point that works on both CPU and GPU with the same API. The backend is automatically detected from the array type.
 
-> **Deprecation Notice:** The legacy `PairList` constructor using linked-list algorithm is deprecated and will be removed in v0.7.0. Use `neighbour_list()` instead. See [DEPRECATIONS.md](DEPRECATIONS.md) for migration details.
+> **Note:** The legacy `PairList` constructor using linked-list algorithm is retained as a reference implementation for testing. New code should use `neighbour_list()` instead. See [DEPRECATIONS.md](DEPRECATIONS.md) for migration details.
 
 ### CPU Example (Multi-threaded)
 
@@ -96,22 +96,22 @@ The package provides two cell list implementations:
 | Implementation | Algorithm | Parallelism | Status |
 |---------------|-----------|-------------|--------|
 | **Sort-based** | Sort by cell ID | Multi-threaded CPU, GPU | Recommended |
-| **Legacy** | Linked-list | Single-threaded | Deprecated in v0.6, removed in v0.7 |
+| **Legacy** | Linked-list | Single-threaded | Reference implementation for testing |
 
 Both produce identical results (validated in tests).
 
 **API Selection:**
 - `neighbour_list()` always uses the sort-based implementation (recommended)
 - `PairList(system::AbstractSystem, cutoff)` uses sort-based (for AtomsBase)
-- `PairList(X::Vector{SVec}, cutoff, cell, pbc)` uses legacy linked-list (deprecated)
+- `PairList(X::Vector{SVec}, cutoff, cell, pbc)` uses legacy linked-list (reference implementation)
 
-## Deprecation Notice
+## Migration Guide
 
-The legacy linked-list implementation (`CellList`, `_celllist_`, `_pairlist_`) is deprecated and will be removed in v0.7.0.
+The legacy linked-list implementation (`CellList`, `_celllist_`, `_pairlist_`) is retained as a reference for testing correctness, but new code should use the unified API.
 
-**Migration summary:**
-- Replace `PairList(X, cutoff, cell, pbc)` with `neighbour_list(X, cutoff, cell, pbc)`
-- Replace `neigs(nlist, i)` with `neighbours(nlist, i)` (both still work)
+**Recommended changes:**
+- Use `neighbour_list(X, cutoff, cell, pbc)` instead of `PairList(X, cutoff, cell, pbc)`
+- Use `neighbours(nlist, i)` instead of `neigs(nlist, i)` (both still work)
 - For memory-efficient iteration, use `neighbour_list(...; lazy=true)` with `for_each_neighbour`
 
 See [DEPRECATIONS.md](DEPRECATIONS.md) for the complete migration guide.
