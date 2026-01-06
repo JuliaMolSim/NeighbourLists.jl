@@ -1,8 +1,7 @@
 # Tests for sort-based cell list implementation
 # Uses shared utilities from test_utils.jl (included by runtests.jl)
 
-using NeighbourLists: SortedCellList, map_sites!, map_pairs!, map_pairs_d!,
-                      count_neighbours, neighbours, CPU  
+using NeighbourLists: SortedCellList, count_neighbours, neighbours, CPU  
 
 @testset "Sort-based Cell List" begin
 
@@ -115,34 +114,3 @@ end
     end
 end
 
-@testset "MapReduce Functions" begin
-    X, C, L = rand_config(100)
-    clist = build_cell_list(X, L/3, C, FULL_PBC; backend=CPU())
-    nlist = materialize_pairlist(clist)
-
-    @testset "map_sites!" begin
-        out = zeros(Float64, 100)
-        map_sites!(Rs -> sum(norm.(Rs)), out, clist)
-        expected = zeros(Float64, 100)
-        for i in 1:100
-            for_each_neighbour(clist, i) do j, R, S
-                expected[i] += norm(R)
-            end
-        end
-        @test out ≈ expected atol=1e-10
-    end
-
-    @testset "map_pairs! symmetric" begin
-        out = zeros(Float64, 100)
-        map_pairs!((i, j, R) -> 1.0 / norm(R), out, nlist; symmetric=true)
-        # Verify it ran without error and produced output
-        @test sum(out) > 0
-    end
-
-    @testset "map_pairs_d! anti-symmetric" begin
-        out = zeros(SVec{Float64}, 100)
-        map_pairs_d!((i, j, R) -> R / norm(R), out, nlist)
-        # Anti-symmetric: total should be ~zero
-        @test norm(sum(out)) < 1e-10
-    end
-end

@@ -32,9 +32,6 @@ include("gpu_kernels.jl")
 # this contains the different iterators over sites, bonds, etc
 include("iterators.jl")
 
-# alternative assembly protocol more akin to mapreduce
-include("mapreduce.jl")
-
 # AtomsBase interface is provided via extension: ext/NeighbourListsAtomsBaseExt.jl
 # CUDA support is provided via extension: ext/NeighbourListsCUDAExt.jl
 
