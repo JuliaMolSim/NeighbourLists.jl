@@ -69,6 +69,25 @@ GPU-compatible: uses explicit scalar construction instead of broadcasting.
     )
 end
 
+"""
+Wrap a single position into the unit cell along each periodic axis.
+
+Open axes are left unchanged. The fractional coordinates of the result
+land in `[0, 1)` along every periodic axis, so that the corresponding
+Cartesian position lies inside the unit cell parallelepiped. This is
+called before binning in `_build_sorted_celllist` so that the stored
+positions are consistent with the cell-index arithmetic used by
+`for_each_neighbour` (fixes #6).
+"""
+@inline function _wrap_position(x::SVec{T}, inv_cell::SMat{T}, cell::SMat{T},
+                                pbc::SVec{Bool}) where {T}
+    frac = inv_cell' * x
+    f1 = pbc[1] ? frac[1] - floor(frac[1]) : frac[1]
+    f2 = pbc[2] ? frac[2] - floor(frac[2]) : frac[2]
+    f3 = pbc[3] ? frac[3] - floor(frac[3]) : frac[3]
+    return cell' * SVec{T}(f1, f2, f3)
+end
+
 
 # ------------ The next two functions are the only dimension-dependent
 #              parts of the code!
@@ -640,21 +659,43 @@ function _build_sorted_celllist(X::AbstractVector{SVec{T}}, cell::SMat{T},
                  or smaller simulation cell.""")
     end
 
+    # Step 0 (fixes #6): wrap positions into the unit cell along
+    # periodic axes. The remaining arithmetic in `for_each_neighbour`
+    # combines stored positions with integer cell shifts, which only
+    # recovers the correct minimum image if the stored positions
+    # already lie in the canonical cell.
+    X_wrapped = _wrap_positions(X, inv_cell, cell, pbc, backend)
+
     # Step 1: Compute cell ID for each atom
-    cell_ids = _compute_cell_ids(X, inv_cell, ncells_vec, pbc, TI, backend)
+    cell_ids = _compute_cell_ids(X_wrapped, inv_cell, ncells_vec, pbc, TI, backend)
 
     # Step 2: Sort atoms by cell ID
     perm = _get_sortperm(cell_ids, backend)
     sorted_cell_ids = cell_ids[perm]
-    sorted_X = X[perm]
+    sorted_X = X_wrapped[perm]
 
     # Step 3: Compute cell offsets (CSR-style)
     cell_offsets = _compute_cell_offsets(sorted_cell_ids, ncells_total, TI, backend)
 
-    return SortedCellList{T, TI, typeof(X), typeof(perm)}(
-        sorted_X, X, perm, sorted_cell_ids, cell_offsets,
+    return SortedCellList{T, TI, typeof(X_wrapped), typeof(perm)}(
+        sorted_X, X_wrapped, perm, sorted_cell_ids, cell_offsets,
         cell, inv_cell, pbc, cutoff, ncells_vec, ncells_total
     )
+end
+
+"""
+Wrap each atom position into the unit cell along periodic axes
+(CPU version). Allocates a fresh `Vector{SVec{T}}`. The GPU version
+lives in `gpu_kernels.jl`.
+"""
+function _wrap_positions(X::AbstractVector{SVec{T}}, inv_cell::SMat{T},
+                         cell::SMat{T}, pbc::SVec{Bool}, ::CPU) where {T}
+    nat = length(X)
+    out = Vector{SVec{T}}(undef, nat)
+    for i in 1:nat
+        out[i] = _wrap_position(X[i], inv_cell, cell, pbc)
+    end
+    return out
 end
 
 """

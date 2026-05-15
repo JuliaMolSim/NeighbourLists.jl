@@ -118,6 +118,21 @@ Kernel to compute cell ID for each atom position.
     end
 end
 
+"""
+Kernel to wrap each atom position into the unit cell along periodic axes
+(fixes #6). Used by `_wrap_positions_gpu` from `_build_sorted_celllist`.
+"""
+@kernel function wrap_positions_kernel!(X_out, @Const(X_in), @Const(inv_cell),
+        @Const(cell), @Const(pbc))
+
+    i = @index(Global, Linear)
+    nat = length(X_in)
+
+    if i <= nat
+        X_out[i] = _wrap_position(X_in[i], inv_cell, cell, pbc)
+    end
+end
+
 
 """
 Kernel to count neighbours for each atom.
@@ -481,6 +496,28 @@ function _compute_cell_ids(X::AbstractVector{SVec{T}}, inv_cell::SMat{T},
                            ncells::SVec{TI}, pbc::SVec{Bool}, ::Type{TI},
                            backend) where {T, TI}
     return _compute_cell_ids_gpu(X, inv_cell, ncells, pbc, TI, backend)
+end
+
+"""
+    _wrap_positions_gpu(X, inv_cell, cell, pbc, backend) -> X_wrapped
+
+GPU wrapper for `_wrap_position`. Returns a new device-side array of
+positions wrapped into the unit cell along periodic axes (fixes #6).
+"""
+function _wrap_positions_gpu(X::AbstractVector{<:SVec{T}}, inv_cell::SMat{T},
+                             cell::SMat{T}, pbc::SVec{Bool}, backend) where {T}
+    nat = length(X)
+    X_out = similar(X)
+    kernel = wrap_positions_kernel!(backend)
+    kernel(X_out, X, inv_cell, cell, pbc; ndrange = nat)
+    synchronize(backend)
+    return X_out
+end
+
+# GPU dispatch for _wrap_positions
+function _wrap_positions(X::AbstractVector{<:SVec{T}}, inv_cell::SMat{T},
+                         cell::SMat{T}, pbc::SVec{Bool}, backend) where {T}
+    return _wrap_positions_gpu(X, inv_cell, cell, pbc, backend)
 end
 
 # GPU dispatch for _compute_cell_offsets
