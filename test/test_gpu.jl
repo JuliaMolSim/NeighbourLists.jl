@@ -2,7 +2,9 @@
 # Uses shared utilities from test_utils.jl (included by runtests.jl)
 # Supports multiple GPU backends: CUDA, AMDGPU, Metal
 
-using NeighbourLists: CPU 
+using NeighbourLists: CPU
+using KernelAbstractions
+using KernelAbstractions: @kernel, @index
 
 if gpu_available()
     backend_name = gpu_backend()
@@ -78,6 +80,40 @@ if gpu_available()
         nlist_gpu = materialize_pairlist(build_cell_list(to_gpu_array(X), 2.0, C, FULL_PBC))
         @test npairs(nlist_cpu) == npairs(nlist_gpu)
         @test compare_cpu_gpu_full(nlist_cpu, nlist_gpu)
+    end
+
+    # Regression for #37: passing a SortedCellList as a kernel argument
+    # fails GPU compilation when no `Adapt.adapt_structure` rule is
+    # defined on it — the inner CuArray fields don't get recursively
+    # adapted to `CuDeviceArray`. Internal NL.jl kernels work around
+    # this by unpacking the fields manually; external consumers calling
+    # `for_each_neighbour` inside a custom `@kernel` cannot.
+    @testset "SortedCellList in user kernels ($backend_name)" begin
+        X, C, L = rand_config(50)
+        X_gpu = to_gpu_array(X)
+        clist = build_cell_list(X_gpu, L/3, C, FULL_PBC)
+
+        @kernel function _count_neighbours_via_clist!(out, c)
+            i = @index(Global, Linear)
+            n = Ref(zero(eltype(out)))
+            for_each_neighbour(c, i) do j, R, S
+                n[] += one(eltype(out))
+            end
+            out[i] = n[]
+        end
+
+        backend = KernelAbstractions.get_backend(X_gpu)
+        out = KernelAbstractions.zeros(backend, Int32, nsites(clist))
+        _count_neighbours_via_clist!(backend)(out, clist; ndrange = nsites(clist))
+        KernelAbstractions.synchronize(backend)
+
+        # Compare against a materialised-pairlist neighbour-count reference.
+        nlist = materialize_pairlist(clist)
+        expected = zeros(Int32, nsites(clist))
+        for i in Array(nlist.i)
+            expected[i] += one(Int32)
+        end
+        @test Array(out) == expected
     end
 
 else
