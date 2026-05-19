@@ -1,7 +1,7 @@
 
 import Base: iterate, length, pairs
 
-export pairs, sites, site, nbodies
+export pairs, sites
 
 abstract type AbstractIterator end
 
