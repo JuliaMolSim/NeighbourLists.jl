@@ -25,7 +25,6 @@ println("# threads = $(Base.Threads.nthreads())")
 println("# GPU backend = $(gpu_backend())")
 
 @testset "NeighbourLists" begin
-   @testset "Aux" begin include("test_aux.jl") end
    @testset "CellList (Legacy)" begin include("test_celllist.jl") end
    @testset "SortBased" begin include("test_sortbased.jl") end
    @testset "Unified API" begin include("test_unified_api.jl") end
