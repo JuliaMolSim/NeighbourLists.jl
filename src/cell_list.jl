@@ -69,26 +69,6 @@ GPU-compatible: uses explicit scalar construction instead of broadcasting.
     )
 end
 
-"""
-Wrap a single position into the unit cell along each periodic axis.
-
-Open axes are left unchanged. The fractional coordinates of the result
-land in `[0, 1)` along every periodic axis, so that the corresponding
-Cartesian position lies inside the unit cell parallelepiped. This is
-called before binning in `_build_sorted_celllist` so that the stored
-positions are consistent with the cell-index arithmetic used by
-`for_each_neighbour` (fixes #6).
-"""
-@inline function _wrap_position(x::SVec{T}, inv_cell::SMat{T}, cell::SMat{T},
-                                pbc::SVec{Bool}) where {T}
-    frac = inv_cell' * x
-    f1 = pbc[1] ? frac[1] - floor(frac[1]) : frac[1]
-    f2 = pbc[2] ? frac[2] - floor(frac[2]) : frac[2]
-    f3 = pbc[3] ? frac[3] - floor(frac[3]) : frac[3]
-    return cell' * SVec{T}(f1, f2, f3)
-end
-
-
 # ------------ The next two functions are the only dimension-dependent
 #              parts of the code!
 
@@ -145,6 +125,21 @@ GPU-compatible: uses explicit component access instead of broadcasting.
     c2 = pbc[2] ? bin_wrap(ci[2], ncells[2]) : clamp(ci[2], one(TI), ncells[2])
     c3 = pbc[3] ? bin_wrap(ci[3], ncells[3]) : clamp(ci[3], one(TI), ncells[3])
     return SVec{TI}(c1, c2, c3)
+end
+
+"""
+Like `bin_wrap_or_trunc`, but also returns the winding number of each
+component: the integer vector `w` such that `ci == wrapped + w .* ncells`.
+For open boundaries the winding is zero. This lets `for_each_neighbour`
+recover the true periodic shift without ever moving atoms into the box
+(fixes #6). GPU-compatible: explicit component access, no broadcasting.
+"""
+@inline function bin_wrap_and_shift(ci::SVec{TI}, pbc::SVec{Bool},
+                                    ncells::SVec{TI}) where TI
+    c1, w1 = wrap_and_shift(ci[1], ncells[1], pbc[1])
+    c2, w2 = wrap_and_shift(ci[2], ncells[2], pbc[2])
+    c3, w3 = wrap_and_shift(ci[3], ncells[3], pbc[3])
+    return SVec{TI}(c1, c2, c3), SVec{TI}(w1, w2, w3)
 end
 
 
@@ -659,43 +654,24 @@ function _build_sorted_celllist(X::AbstractVector{SVec{T}}, cell::SMat{T},
                  or smaller simulation cell.""")
     end
 
-    # Step 0 (fixes #6): wrap positions into the unit cell along
-    # periodic axes. The remaining arithmetic in `for_each_neighbour`
-    # combines stored positions with integer cell shifts, which only
-    # recovers the correct minimum image if the stored positions
-    # already lie in the canonical cell.
-    X_wrapped = _wrap_positions(X, inv_cell, cell, pbc, backend)
-
-    # Step 1: Compute cell ID for each atom
-    cell_ids = _compute_cell_ids(X_wrapped, inv_cell, ncells_vec, pbc, TI, backend)
+    # Step 1: Compute cell ID for each atom. Positions are NOT wrapped
+    # into the box (fixes #6): `for_each_neighbour` recovers the correct
+    # minimum image from the cell-index winding numbers instead, so the
+    # stored positions stay identical to the caller's input.
+    cell_ids = _compute_cell_ids(X, inv_cell, ncells_vec, pbc, TI, backend)
 
     # Step 2: Sort atoms by cell ID
     perm = _get_sortperm(cell_ids, backend)
     sorted_cell_ids = cell_ids[perm]
-    sorted_X = X_wrapped[perm]
+    sorted_X = X[perm]
 
     # Step 3: Compute cell offsets (CSR-style)
     cell_offsets = _compute_cell_offsets(sorted_cell_ids, ncells_total, TI, backend)
 
-    return SortedCellList{T, TI, typeof(X_wrapped), typeof(perm)}(
-        sorted_X, X_wrapped, perm, sorted_cell_ids, cell_offsets,
+    return SortedCellList{T, TI, typeof(sorted_X), typeof(perm)}(
+        sorted_X, X, perm, sorted_cell_ids, cell_offsets,
         cell, inv_cell, pbc, cutoff, ncells_vec, ncells_total
     )
-end
-
-"""
-Wrap each atom position into the unit cell along periodic axes
-(CPU version). Allocates a fresh `Vector{SVec{T}}`. The GPU version
-lives in `gpu_kernels.jl`.
-"""
-function _wrap_positions(X::AbstractVector{SVec{T}}, inv_cell::SMat{T},
-                         cell::SMat{T}, pbc::SVec{Bool}, ::CPU) where {T}
-    nat = length(X)
-    out = Vector{SVec{T}}(undef, nat)
-    for i in 1:nat
-        out[i] = _wrap_position(X[i], inv_cell, cell, pbc)
-    end
-    return out
 end
 
 """
@@ -864,15 +840,19 @@ This is designed to be efficient inside GPU kernels.
     cell_offsets = clist.cell_offsets
     perm = clist.perm
 
-    # Get cell index of atom i
-    ci = position_to_cell_index(inv_cell, xi, ncells)
-    ci = bin_wrap_or_trunc.(ci, pbc, ncells)
+    # Cell index of atom i: `ci` is the wrapped (binned) cell, `wi` the
+    # winding number (how many whole cells `xi` lies outside the box).
+    # Positions are never wrapped; the winding carries that offset into
+    # the integer shift instead (matscipy-style; fixes #6).
+    ci0 = position_to_cell_index(inv_cell, xi, ncells)
+    ci, wi = bin_wrap_and_shift(ci0, pbc, ncells)
 
     # How many cells to check in each direction
     nxyz = ceil.(TI, clist.cutoff * (ncells ./ abs.(lens)))
 
-    # Iterate over adjacent cells (non-allocating version)
-    _for_each_adjacent_cell(ci, ncells, pbc, nxyz) do cj_linear, cell_shift
+    # Iterate over adjacent cells (non-allocating version). `s_loop` is
+    # the image step contributed by the cell-list search itself.
+    _for_each_adjacent_cell(ci, ncells, pbc, nxyz) do cj_linear, s_loop
         # Get atoms in this cell
         idx_start = cell_offsets[cj_linear]
         idx_end = cell_offsets[cj_linear + 1] - one(TI)
@@ -880,19 +860,27 @@ This is designed to be efficient inside GPU kernels.
         for idx in idx_start:idx_end
             j_orig = perm[idx]  # Original atom index
 
-            # Skip self-interaction (unless periodic image)
-            if i == j_orig && all(cell_shift .== 0)
+            # Skip self-interaction (unless periodic image). For i == j
+            # the winding terms cancel, so `S == s_loop` here.
+            if i == j_orig && all(s_loop .== 0)
                 continue
             end
 
             xj = X_orig[j_orig]
 
-            # Compute displacement with periodic shift
-            R = xj - xi + cell_mat' * cell_shift
+            # True integer shift between the *stored* positions:
+            #   S = s_loop + wi - wj
+            # so R = xj - xi + cell' * S is the correct minimum image
+            # regardless of how far either atom lies outside the box.
+            cj0 = position_to_cell_index(inv_cell, xj, ncells)
+            _, wj = bin_wrap_and_shift(cj0, pbc, ncells)
+            S = s_loop .+ wi .- wj
+
+            R = xj - xi + cell_mat' * S
             r_sq = dot(R, R)
 
             if r_sq < cutoff_sq
-                f(j_orig, R, cell_shift)
+                f(j_orig, R, S)
             end
         end
     end

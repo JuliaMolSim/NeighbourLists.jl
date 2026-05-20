@@ -198,4 +198,32 @@ end
             @test got == ref
         end
     end
+
+    @testset "floating-point boundary: frac just below 0" begin
+        # An atom whose fractional coordinate is a tiny negative number is
+        # a delicate case: `frac - floor(frac)` rounds up to *exactly*
+        # 1.0, so a wrap-the-position fix would bin the atom in cell 1
+        # while leaving it on the far face, dropping real neighbours
+        # across that face. Deriving the shift from cell-index winding
+        # numbers (and never moving the atom) avoids this entirely.
+        L = 8.0
+        C = cubic_cell(L)
+        cutoff = 1.5
+        pbc = FULL_PBC
+
+        tiny = -5e-17 * L                      # fractional coord -5e-17
+        @test (tiny / L) - floor(tiny / L) == 1.0   # the rounding trap
+
+        # atom 1 just inside the +y face; atom 2 a hair below y = 0
+        X = [SVec(0.5, L - 0.3, 0.5), SVec(0.5, tiny, 0.5)]
+        clist = build_cell_list(X, cutoff, C, pbc; backend = CPU())
+
+        js, Rs, Ss = neighbours(clist, 1)
+        @test 2 in Int.(js)
+        k = findfirst(==(2), Int.(js))
+        @test sqrt(sum(abs2, Rs[k])) ≈ 0.3 atol = 1e-9
+        # the periodic-image identity must hold against the *original*
+        # (unwrapped) positions stored in the cell list
+        @test X[2] - X[1] + clist.cell' * Ss[k] ≈ Rs[k] atol = 1e-12
+    end
 end
