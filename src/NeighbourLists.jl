@@ -23,6 +23,10 @@ set_maxthreads!(n) = (MAX_THREADS[1] = n)
 
 include("types.jl")
 
+# Adapt.adapt_structure rules for SortedCellList / PairList so external
+# packages can pass them as KA kernel arguments (fixes #37).
+include("adapt.jl")
+
 # this contains the cell-list data structures and assembly
 include("cell_list.jl")
 
