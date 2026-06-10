@@ -57,15 +57,19 @@ end
 
 """
 Map particle position to a (cartesian) cell index.
-GPU-compatible: uses explicit scalar construction instead of broadcasting.
+GPU-compatible: uses explicit scalar construction instead of broadcasting,
+and `unsafe_trunc` instead of a checked `floor(TI, ...)` conversion — the
+InexactError throw path of the checked version requires boxing, which
+Metal kernels cannot compile. Out-of-range indices are clamped/wrapped
+by `bin_wrap_or_trunc` downstream.
 """
 @inline function position_to_cell_index(inv_cell::SMat{T}, x::SVec{T},
                                         ncells::SVec{TI}) where {T, TI <: Integer}
     frac = inv_cell' * x
     return SVec{TI}(
-        floor(TI, frac[1] * ncells[1] + one(TI)),
-        floor(TI, frac[2] * ncells[2] + one(TI)),
-        floor(TI, frac[3] * ncells[3] + one(TI))
+        unsafe_trunc(TI, floor(frac[1] * ncells[1] + one(TI))),
+        unsafe_trunc(TI, floor(frac[2] * ncells[2] + one(TI))),
+        unsafe_trunc(TI, floor(frac[3] * ncells[3] + one(TI)))
     )
 end
 
@@ -776,8 +780,13 @@ This is designed to be efficient inside GPU kernels.
     xi = clist.X_orig[i]
     lens = lengths(clist.cell)
 
-    # How many cells to check in each direction
-    nxyz = ceil.(TI, clist.cutoff * (clist.ncells ./ abs.(lens)))
+    # How many cells to check in each direction. `unsafe_trunc` instead of
+    # a checked `ceil.(TI, ...)` conversion: the InexactError throw path of
+    # the checked version requires boxing, which Metal kernels cannot compile.
+    rc = clist.cutoff * (ncells ./ abs.(lens))
+    nxyz = SVec{TI}(unsafe_trunc(TI, ceil(rc[1])),
+                    unsafe_trunc(TI, ceil(rc[2])),
+                    unsafe_trunc(TI, ceil(rc[3])))
 
     # Delegate to the flat single-closure iteration helper shared with the
     # internal KA kernels. The previous implementation routed `f` through a

@@ -178,10 +178,12 @@ end
 @testset "GPU - Unified API" begin
     if gpu_available()
         backend_name = gpu_backend()
-        @info "Testing unified API with $backend_name"
+        # use Float32 on Metal (no Float64 support), Float64 elsewhere
+        Tgpu = first(gpu_supported_eltypes())
+        @info "Testing unified API with $backend_name ($Tgpu)"
 
         @testset "neighbour_list() with GPU ($backend_name)" begin
-            X, C, L = rand_config(100)
+            X, C, L = rand_config(100; T=Tgpu)
             X_gpu = to_gpu_array(X)
 
             # Auto-detect GPU backend from array type
@@ -197,7 +199,7 @@ end
         end
 
         @testset "neighbour_list() Lazy Mode GPU ($backend_name)" begin
-            X, C, L = rand_config(100)
+            X, C, L = rand_config(100; T=Tgpu)
             X_gpu = to_gpu_array(X)
 
             clist_gpu = neighbour_list(X_gpu, L/3, C, FULL_PBC; lazy=true)

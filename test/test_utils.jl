@@ -20,16 +20,16 @@ const NO_PBC = SVec(false, false, false)
 # ==================== Configuration Generators ====================
 
 """
-    rand_config(N; density=0.05)
+    rand_config(N; density=0.05, T=Float64)
 
-Generate a random cubic configuration with N atoms.
+Generate a random cubic configuration with N atoms and element type `T`.
 Returns (X, C, L) where X is positions, C is cell matrix, L is box length.
 """
-function rand_config(N; density=0.05)
+function rand_config(N; density=0.05, T=Float64)
     volume = N / density
-    L = volume^(1/3)
-    C = SMat(diagm([L, L, L]))
-    X = [SVec(L * rand(), L * rand(), L * rand()) for _ in 1:N]
+    L = T(volume^(1/3))
+    C = SMat{T}(diagm([L, L, L]))
+    X = [SVec{T}(L * rand(T), L * rand(T), L * rand(T)) for _ in 1:N]
     return X, C, L
 end
 
@@ -231,6 +231,14 @@ function gpu_backend()
 end
 
 """
+    gpu_supported_eltypes()
+
+Element types supported by the available GPU backend. Metal (Apple GPUs)
+does not support Float64, so only Float32 is tested there.
+"""
+gpu_supported_eltypes() = gpu_backend() == :Metal ? (Float32,) : (Float64, Float32)
+
+"""
     to_gpu_array(x)
 
 Convert array `x` to the appropriate GPU array type for the available backend.
@@ -282,12 +290,12 @@ end
 # ==================== Test Helpers ====================
 
 """
-    rand_non_cubic_cell()
+    rand_non_cubic_cell(T=Float64)
 
 Generate a random non-cubic (triclinic) cell matrix for testing.
 """
-function rand_non_cubic_cell()
-    return SMat([10.0 2.0 1.0; 0.0 9.0 1.5; 0.0 0.0 8.0])
+function rand_non_cubic_cell(T=Float64)
+    return SMat{T}([10.0 2.0 1.0; 0.0 9.0 1.5; 0.0 0.0 8.0])
 end
 
 """
@@ -296,7 +304,8 @@ end
 Generate random configuration in a non-cubic cell.
 """
 function rand_config_triclinic(N; cell=rand_non_cubic_cell())
-    X = [cell' * SVec(rand(), rand(), rand()) for _ in 1:N]
+    T = eltype(cell)
+    X = [cell' * SVec{T}(rand(T), rand(T), rand(T)) for _ in 1:N]
     return X, cell
 end
 
@@ -340,14 +349,14 @@ function test_all_pbc_legacy_vs_sortbased(; N=50, density=0.05, cutoff_frac=0.33
 end
 
 """
-    test_cpu_vs_gpu(to_gpu; N=100, density=0.05, cutoff_frac=0.33, pbc=SVec(true,true,true))
+    test_cpu_vs_gpu(to_gpu; N=100, density=0.05, cutoff_frac=0.33, pbc=SVec(true,true,true), T=Float64)
 
 Test that GPU implementation matches CPU implementation.
 `to_gpu` is a function that converts arrays to GPU (e.g., CuArray).
 """
 function test_cpu_vs_gpu(to_gpu; N=100, density=0.05, cutoff_frac=0.33,
-                          pbc=SVec(true, true, true))
-    X, C, L = rand_config(N; density=density)
+                          pbc=SVec(true, true, true), T=Float64)
+    X, C, L = rand_config(N; density=density, T=T)
     cutoff = L * cutoff_frac
 
     # CPU version
@@ -364,12 +373,12 @@ function test_cpu_vs_gpu(to_gpu; N=100, density=0.05, cutoff_frac=0.33,
 end
 
 """
-    test_all_pbc_cpu_vs_gpu(to_gpu; N=50, density=0.05, cutoff_frac=0.33)
+    test_all_pbc_cpu_vs_gpu(to_gpu; N=50, density=0.05, cutoff_frac=0.33, T=Float64)
 
 Run CPU vs GPU comparison for all 8 PBC combinations.
 """
-function test_all_pbc_cpu_vs_gpu(to_gpu; N=50, density=0.05, cutoff_frac=0.33)
-    X, C, L = rand_config(N; density=density)
+function test_all_pbc_cpu_vs_gpu(to_gpu; N=50, density=0.05, cutoff_frac=0.33, T=Float64)
+    X, C, L = rand_config(N; density=density, T=T)
     cutoff = L * cutoff_frac
 
     for pbc in all_pbc_cases()
@@ -391,9 +400,10 @@ end
 Test with a non-cubic (triclinic) cell.
 test_fn(X, C, cutoff, pbc) should run the actual test.
 """
-function test_triclinic_cell(test_fn; N=80, cutoff=3.0, pbc=SVec(true, true, true))
-    C = rand_non_cubic_cell()
-    X = [C' * SVec(rand(), rand(), rand()) for _ in 1:N]
+function test_triclinic_cell(test_fn; N=80, cutoff=3.0, pbc=SVec(true, true, true),
+                             T=Float64)
+    C = rand_non_cubic_cell(T)
+    X = [C' * SVec{T}(rand(T), rand(T), rand(T)) for _ in 1:N]
     test_fn(X, C, cutoff, pbc)
 end
 
@@ -484,21 +494,21 @@ function test_edge_cases(build_fn)
 end
 
 """
-    test_edge_cases_cpu_vs_gpu(to_gpu)
+    test_edge_cases_cpu_vs_gpu(to_gpu; T=Float64)
 
 Run edge case tests comparing CPU and GPU implementations.
 `to_gpu` is a function that converts arrays to GPU (e.g., CuArray).
 """
-function test_edge_cases_cpu_vs_gpu(to_gpu)
-    C = cubic_cell(10.0)
+function test_edge_cases_cpu_vs_gpu(to_gpu; T=Float64)
+    C = cubic_cell(T(10))
 
     # Single atom
-    X = [SVec(5.0, 5.0, 5.0)]
+    X = [SVec{T}(5, 5, 5)]
     nlist_gpu = materialize_pairlist(build_cell_list(to_gpu(X), 3.0, C, FULL_PBC))
     @test npairs(nlist_gpu) == 0
 
     # Two atoms - compare CPU vs GPU
-    X = [SVec(5.0, 5.0, 5.0), SVec(5.0, 5.0, 6.0)]
+    X = [SVec{T}(5, 5, 5), SVec{T}(5, 5, 6)]
     nlist_cpu = materialize_pairlist(build_cell_list(X, 3.0, C, FULL_PBC; backend=CPU()))
     nlist_gpu = materialize_pairlist(build_cell_list(to_gpu(X), 3.0, C, FULL_PBC))
     @test npairs(nlist_cpu) == npairs(nlist_gpu)
@@ -520,13 +530,13 @@ function test_large_systems(build_fn; sizes=[500, 1000, 2000])
 end
 
 """
-    test_large_systems_cpu_vs_gpu(to_gpu; sizes=[500, 1000, 2000])
+    test_large_systems_cpu_vs_gpu(to_gpu; sizes=[500, 1000, 2000], T=Float64)
 
 Run large system tests comparing CPU and GPU.
 """
-function test_large_systems_cpu_vs_gpu(to_gpu; sizes=[500, 1000, 2000])
+function test_large_systems_cpu_vs_gpu(to_gpu; sizes=[500, 1000, 2000], T=Float64)
     for N in sizes
-        X, C, L = rand_config(N)
+        X, C, L = rand_config(N; T=T)
         cutoff = L * 0.25
         nlist_cpu = materialize_pairlist(build_cell_list(X, cutoff, C, FULL_PBC; backend=CPU()))
         nlist_gpu = materialize_pairlist(build_cell_list(to_gpu(X), cutoff, C, FULL_PBC))

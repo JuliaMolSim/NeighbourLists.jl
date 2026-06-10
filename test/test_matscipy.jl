@@ -29,7 +29,7 @@ else
 
         # Matscipy interface
         function matscipy_neighbourlist(X, C, pbc, cutoff)
-            pos_np = NUMPY.array(collect(reinterpret(Float64, X))).reshape(length(X), 3)
+            pos_np = NUMPY.array(Float64.(reinterpret(eltype(eltype(X)), X))).reshape(length(X), 3)
             cell_np = NUMPY.array(collect(transpose(C))[:]).reshape(3, 3)
             pbc_np = NUMPY.array(collect(pbc))
 
@@ -121,10 +121,12 @@ else
 
             if gpu_available()
                 backend_name = gpu_backend()
-                @info "Running GPU ($backend_name) vs matscipy validation"
+                # use Float32 on Metal (no Float64 support), Float64 elsewhere
+                Tgpu = first(gpu_supported_eltypes())
+                @info "Running GPU ($backend_name, $Tgpu) vs matscipy validation"
 
                 @testset "GPU vs Matscipy ($backend_name)" begin
-                    X, C, L = rand_config(100)
+                    X, C, L = rand_config(100; T=Tgpu)
                     nlist = materialize_pairlist(build_cell_list(to_gpu_array(X), L/3, C, FULL_PBC))
                     i_ms, j_ms, S_ms = matscipy_neighbourlist(X, C, FULL_PBC, L/3)
 
@@ -136,7 +138,7 @@ else
 
                 @testset "GPU Multiple Configs ($backend_name)" begin
                     for _ in 1:5
-                        X, C, L = rand_config(rand(50:150))
+                        X, C, L = rand_config(rand(50:150); T=Tgpu)
                         cutoff = L * (0.25 + 0.25 * rand())
                         pbc = SVec(rand(Bool), rand(Bool), rand(Bool))
                         nlist = materialize_pairlist(build_cell_list(to_gpu_array(X), cutoff, C, pbc))
