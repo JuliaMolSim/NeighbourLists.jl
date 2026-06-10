@@ -783,7 +783,7 @@ This is designed to be efficient inside GPU kernels.
     # How many cells to check in each direction. `unsafe_trunc` instead of
     # a checked `ceil.(TI, ...)` conversion: the InexactError throw path of
     # the checked version requires boxing, which Metal kernels cannot compile.
-    rc = clist.cutoff * (ncells ./ abs.(lens))
+    rc = clist.cutoff * (clist.ncells ./ abs.(lens))
     nxyz = SVec{TI}(unsafe_trunc(TI, ceil(rc[1])),
                     unsafe_trunc(TI, ceil(rc[2])),
                     unsafe_trunc(TI, ceil(rc[3])))
