@@ -713,6 +713,19 @@ function _get_sortperm(cell_ids::AbstractVector{TI}, backend) where TI
     perm = similar(cell_ids, TI, n)
     AcceleratedKernels.sortperm!(perm, cell_ids)
     synchronize(backend)
+    # Guard against silent GPU sort failures: on Metal, sortperm! has been
+    # observed to return an all-zeros permutation without raising any error
+    # (issue #42), which would silently corrupt the cell list. This O(n)
+    # range check turns that failure mode into a loud error. The reductions
+    # are kept homogeneous in TI: mixed-type accumulators (e.g. a Bool
+    # mapreduce over an Int32 array) fail GPU compilation on Metal.
+    pmin = AcceleratedKernels.reduce(min, perm; init=typemax(TI))
+    pmax = AcceleratedKernels.reduce(max, perm; init=typemin(TI))
+    if pmin < one(TI) || pmax > TI(n)
+        error("""GPU sortperm! returned an invalid permutation (entries outside 1:$n).
+                 This indicates a GPU sort failure (see NeighbourLists.jl issue #42).
+                 As a workaround, build the cell list with backend=CPU().""")
+    end
     return perm
 end
 

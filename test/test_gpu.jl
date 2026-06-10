@@ -72,15 +72,7 @@ if gpu_available()
         end
 
         @testset "GPU Large Systems ($backend_name, $T)" begin
-            if backend_name == :Metal
-                # AcceleratedKernels.sortperm! is broken on Metal for
-                # n ≳ 512 (silently wrong results, possible GPU hang) —
-                # see issue #42. Cap the system size until that is fixed.
-                test_large_systems_cpu_vs_gpu(to_gpu_array; sizes=[500], T=T)
-                @test_skip "sizes > 512 disabled on Metal (#42)"
-            else
-                test_large_systems_cpu_vs_gpu(to_gpu_array; T=T)
-            end
+            test_large_systems_cpu_vs_gpu(to_gpu_array; T=T)
         end
 
         @testset "GPU High Density ($backend_name, $T)" begin
@@ -133,6 +125,7 @@ if gpu_available()
 
     if gpu_backend() == :Metal
         @testset "GPU Float64 (Skipped on Metal)" begin
+            @info("Skipping Float64 tests on Metal backend") 
             @test_skip "Metal does not support Float64"
         end
     end
