@@ -762,62 +762,6 @@ Return the cutoff distance.
 cutoff(clist::SortedCellList) = clist.cutoff
 
 """
-Get the range of adjacent cell indices to check for a given cell.
-Calls `f(cell_index, shift_vector)` for each adjacent cell.
-
-This version iterates directly without allocation for better performance.
-For fully periodic systems, this is straightforward.
-For non-periodic, we skip cells outside the domain bounds.
-"""
-@inline function _for_each_adjacent_cell(f::F, ci::SVec{TI}, ncells::SVec{TI},
-                                          pbc::SVec{Bool}, nxyz::SVec{TI}) where {F, TI}
-    ns = ncells.data
-
-    # Compute the range of cells to visit in each dimension
-    # For periodic: full range, wrapping handled by shift
-    # For non-periodic: clamp to [1, ncells]
-    x_lo = pbc[1] ? (ci[1] - nxyz[1]) : max(one(TI), ci[1] - nxyz[1])
-    x_hi = pbc[1] ? (ci[1] + nxyz[1]) : min(ncells[1], ci[1] + nxyz[1])
-    y_lo = pbc[2] ? (ci[2] - nxyz[2]) : max(one(TI), ci[2] - nxyz[2])
-    y_hi = pbc[2] ? (ci[2] + nxyz[2]) : min(ncells[2], ci[2] + nxyz[2])
-    z_lo = pbc[3] ? (ci[3] - nxyz[3]) : max(one(TI), ci[3] - nxyz[3])
-    z_hi = pbc[3] ? (ci[3] + nxyz[3]) : min(ncells[3], ci[3] + nxyz[3])
-
-    for cj_z in z_lo:z_hi
-        cj_z_wrapped = pbc[3] ? bin_wrap(cj_z, ncells[3]) : cj_z
-        shift_z = _compute_shift(cj_z, ncells[3], pbc[3])
-
-        for cj_y in y_lo:y_hi
-            cj_y_wrapped = pbc[2] ? bin_wrap(cj_y, ncells[2]) : cj_y
-            shift_y = _compute_shift(cj_y, ncells[2], pbc[2])
-
-            for cj_x in x_lo:x_hi
-                cj_x_wrapped = pbc[1] ? bin_wrap(cj_x, ncells[1]) : cj_x
-                shift_x = _compute_shift(cj_x, ncells[1], pbc[1])
-
-                cj_wrapped = SVec{TI}(cj_x_wrapped, cj_y_wrapped, cj_z_wrapped)
-                cell_shift = SVec{TI}(shift_x, shift_y, shift_z)
-
-                linear_idx = _sub2ind(ns, cj_wrapped)
-                f(linear_idx, cell_shift)
-            end
-        end
-    end
-end
-
-@inline function _compute_shift(i::TI, n::TI, pbc::Bool) where TI
-    if !pbc
-        return zero(TI)
-    elseif i <= 0
-        return TI(-1)
-    elseif i > n
-        return TI(1)
-    else
-        return zero(TI)
-    end
-end
-
-"""
     for_each_neighbour(f, clist::SortedCellList, i)
 
 Call `f(j, R, shift)` for each neighbour j of atom i within cutoff.
@@ -829,61 +773,21 @@ This is designed to be efficient inside GPU kernels.
 """
 @inline function for_each_neighbour(f::F, clist::SortedCellList{T,TI},
                                     i::Integer) where {F, T, TI}
-    X_orig = clist.X_orig
-    xi = X_orig[i]
-    cutoff_sq = clist.cutoff^2
-    inv_cell = clist.inv_cell
-    ncells = clist.ncells
-    pbc = clist.pbc
-    cell_mat = clist.cell
-    lens = lengths(cell_mat)
-    cell_offsets = clist.cell_offsets
-    perm = clist.perm
-
-    # Cell index of atom i: `ci` is the wrapped (binned) cell, `wi` the
-    # winding number (how many whole cells `xi` lies outside the box).
-    # Positions are never wrapped; the winding carries that offset into
-    # the integer shift instead (matscipy-style; fixes #6).
-    ci0 = position_to_cell_index(inv_cell, xi, ncells)
-    ci, wi = bin_wrap_and_shift(ci0, pbc, ncells)
+    xi = clist.X_orig[i]
+    lens = lengths(clist.cell)
 
     # How many cells to check in each direction
-    nxyz = ceil.(TI, clist.cutoff * (ncells ./ abs.(lens)))
+    nxyz = ceil.(TI, clist.cutoff * (clist.ncells ./ abs.(lens)))
 
-    # Iterate over adjacent cells (non-allocating version). `s_loop` is
-    # the image step contributed by the cell-list search itself.
-    _for_each_adjacent_cell(ci, ncells, pbc, nxyz) do cj_linear, s_loop
-        # Get atoms in this cell
-        idx_start = cell_offsets[cj_linear]
-        idx_end = cell_offsets[cj_linear + 1] - one(TI)
-
-        for idx in idx_start:idx_end
-            j_orig = perm[idx]  # Original atom index
-
-            # Skip self-interaction (unless periodic image). For i == j
-            # the winding terms cancel, so `S == s_loop` here.
-            if i == j_orig && all(s_loop .== 0)
-                continue
-            end
-
-            xj = X_orig[j_orig]
-
-            # True integer shift between the *stored* positions:
-            #   S = s_loop + wi - wj
-            # so R = xj - xi + cell' * S is the correct minimum image
-            # regardless of how far either atom lies outside the box.
-            cj0 = position_to_cell_index(inv_cell, xj, ncells)
-            _, wj = bin_wrap_and_shift(cj0, pbc, ncells)
-            S = s_loop .+ wi .- wj
-
-            R = xj - xi + cell_mat' * S
-            r_sq = dot(R, R)
-
-            if r_sq < cutoff_sq
-                f(j_orig, R, S)
-            end
-        end
-    end
+    # Delegate to the flat single-closure iteration helper shared with the
+    # internal KA kernels. The previous implementation routed `f` through a
+    # second nested closure (`_for_each_adjacent_cell`), which defeated
+    # inlining on GPU: a `Ref` accumulator captured by `f` in a user
+    # `@kernel` could then not be elided and triggered a device-side heap
+    # allocation (`gpu_gc_pool_alloc`), failing GPU compilation (#37).
+    _for_each_neighbor_pair(f, i, xi, clist.X_orig, clist.cell_offsets,
+                            clist.perm, clist.inv_cell, clist.cell,
+                            clist.ncells, clist.pbc, clist.cutoff^2, nxyz)
 end
 
 """
