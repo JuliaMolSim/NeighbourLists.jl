@@ -60,16 +60,17 @@ that is within cutoff distance.
                                          cutoff_sq, nxyz) where F
     TI = eltype(ncells)
 
-    # Get cell index of atom i
-    ci = position_to_cell_index(inv_cell, xi, ncells)
-    ci = bin_wrap_or_trunc(ci, pbc, ncells)
+    # Cell index of atom i: wrapped cell `ci` plus winding `wi`. Positions
+    # are not wrapped; the winding goes into the integer shift (fixes #6).
+    ci0 = position_to_cell_index(inv_cell, xi, ncells)
+    ci, wi = bin_wrap_and_shift(ci0, pbc, ncells)
 
     # Iterate over adjacent cells
     for dz in -nxyz[3]:nxyz[3]
         for dy in -nxyz[2]:nxyz[2]
             for dx in -nxyz[1]:nxyz[1]
                 if _is_cell_in_bounds(ci, TI(dx), TI(dy), TI(dz), ncells, pbc)
-                    cj_linear, cell_shift = _get_neighbor_cell(ci, TI(dx), TI(dy), TI(dz), ncells, pbc)
+                    cj_linear, s_loop = _get_neighbor_cell(ci, TI(dx), TI(dy), TI(dz), ncells, pbc)
 
                     # Iterate over atoms in this cell
                     idx_start = cell_offsets[cj_linear]
@@ -78,13 +79,18 @@ that is within cutoff distance.
                     for idx in idx_start:idx_end
                         j_orig = perm[idx]
 
-                        if !_is_self_interaction(i, j_orig, cell_shift[1], cell_shift[2], cell_shift[3])
+                        if !_is_self_interaction(i, j_orig, s_loop[1], s_loop[2], s_loop[3])
                             xj = X_orig[j_orig]
-                            R = xj - xi + cell_mat' * cell_shift
+                            # True shift: S = s_loop + wi - wj (see CPU
+                            # for_each_neighbour).
+                            cj0 = position_to_cell_index(inv_cell, xj, ncells)
+                            _, wj = bin_wrap_and_shift(cj0, pbc, ncells)
+                            S = s_loop .+ wi .- wj
+                            R = xj - xi + cell_mat' * S
                             r_sq = dot(R, R)
 
                             if r_sq < cutoff_sq
-                                f(j_orig, R, cell_shift)
+                                f(j_orig, R, S)
                             end
                         end
                     end
@@ -374,6 +380,7 @@ function _compute_cell_ids(X::AbstractVector{SVec{T}}, inv_cell::SMat{T},
                            backend) where {T, TI}
     return _compute_cell_ids_gpu(X, inv_cell, ncells, pbc, TI, backend)
 end
+
 
 # GPU dispatch for _compute_cell_offsets
 function _compute_cell_offsets(sorted_cell_ids::AbstractVector{TI},
