@@ -1,6 +1,6 @@
 name = "NeighbourLists"
 uuid = "2fcf5ba9-9ed4-57cf-b73f-ff513e316b9c"
-version = "0.6.1"
+version = "0.6.2"
 
 [deps]
 AcceleratedKernels = "6a4ca0a5-0e36-4168-a932-d9be78d558f1"
